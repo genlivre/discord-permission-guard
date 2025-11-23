@@ -1,11 +1,13 @@
 // src/checker.ts
+
 import type { Env } from "./discord";
 import type { GuildConfig } from "./config";
 import { GUILDS } from "./config";
-import { fetchGuildChannels, sendChannelMessage } from "./discord";
+import { fetchGuildChannels } from "./discord";
+import { sendWebhook } from "./webhook";
 import type { DiscordChannel, DiscordPermissionOverwrite } from "./types";
 
-// Discordの VIEW_CHANNEL ビット値（0x400 = 1024）
+// Discord の VIEW_CHANNEL ビット値（0x400 = 1024）
 const VIEW_CHANNEL_BIT = 1 << 10; // 1024
 
 // 監視対象にするチャンネルタイプ
@@ -19,26 +21,24 @@ interface PublicChannelInfo {
 }
 
 /**
- * @everyone に ViewChannel が Allow されているかチェック
+ * @everyone に ViewChannel が Allow されているかどうかを判定する
  *
- * ※簡易判定：
- *   - permission_overwrites の中に
- *     - id が guildId（@everyoneロールと同じID）
- *     - allow に VIEW_CHANNEL ビットが立っている
- *   を「公開状態」とみなす。
+ * - permission_overwrites の中から
+ *   - id === guildId（@everyone ロールと同じID）
+ *   - type === 0（role）
+ *   の Overwrite を探す
+ * - allow に VIEW_CHANNEL ビットが立っていて、
+ *   deny には立っていなければ「公開状態」とみなす
  */
 function isOpenToEveryone(channel: DiscordChannel, guildId: string): boolean {
   const overwrites = channel.permission_overwrites ?? [];
 
   const everyoneOverwrite:
     | DiscordPermissionOverwrite
-    | undefined = overwrites.find(
-    (o) => o.id === guildId && o.type === 0 // type=0 はロール
-  );
+    | undefined = overwrites.find((o) => o.id === guildId && o.type === 0); // type=0 はロール
 
   if (!everyoneOverwrite) {
-    // ここでは「明示的にAllowしている」場合だけを検出したいので、
-    // Overwriteがなければ false（=ここでは問題なし）としておく。
+    // 明示的な Allow がない限りここでは問題なしと判断
     return false;
   }
 
@@ -48,13 +48,14 @@ function isOpenToEveryone(channel: DiscordChannel, guildId: string): boolean {
   const isAllowed = (allow & BigInt(VIEW_CHANNEL_BIT)) !== BigInt(0);
   const isDenied = (deny & BigInt(VIEW_CHANNEL_BIT)) !== BigInt(0);
 
-  // Allowが立っていて、かつDenyされていないなら「公開」とみなす
+  // Allow が立っていて Deny が立っていなければ「公開」
   return isAllowed && !isDenied;
 }
 
 /**
  * 1ギルド分のチャンネルをチェックし、
- * 問題のある（@everyoneに公開されている）チャンネルを返す
+ * 「@everyone に公開されているのに whitelist に入っていない」
+ * チャンネルの一覧を返す
  */
 async function checkGuild(
   env: Env,
@@ -66,8 +67,11 @@ async function checkGuild(
   const result: PublicChannelInfo[] = [];
 
   for (const ch of channels) {
-    if (!TARGET_CHANNEL_TYPES.has(ch.type)) continue; // テキスト系だけ対象
-    if (whitelistChannelIds.includes(ch.id)) continue; // ホワイトリスト除外
+    // テキスト/ニュース/フォーラム以外はスキップ
+    if (!TARGET_CHANNEL_TYPES.has(ch.type)) continue;
+
+    // ホワイトリスト（公開OKと明示）ならスキップ
+    if (whitelistChannelIds.includes(ch.id)) continue;
 
     if (isOpenToEveryone(ch, guildId)) {
       result.push({
@@ -82,7 +86,8 @@ async function checkGuild(
 }
 
 /**
- * 全ギルドをチェックして、問題があればそれぞれの通知チャンネルへ送信
+ * 全ギルドをチェックして、問題があれば
+ * 各ギルドに対応した通知用 Webhook（管理サーバー側）へ送信する
  */
 export async function runPermissionCheck(env: Env): Promise<void> {
   for (const guildConfig of GUILDS) {
@@ -90,39 +95,40 @@ export async function runPermissionCheck(env: Env): Promise<void> {
       const openChannels = await checkGuild(env, guildConfig);
 
       if (openChannels.length === 0) {
-        // 問題なしなら何もしない（通知しない）
         console.log(
           `[${guildConfig.guildName}] no problematic channels found.`
         );
         continue;
       }
 
-      // 通知メッセージを組み立てる
+      // 通知メッセージ組み立て
       const lines: string[] = [];
       lines.push(
         `🚨 **公開状態の可能性があるチャンネルを検出しました**`,
         ``,
-        `サーバー: **${guildConfig.guildName}** (${guildConfig.guildId})`,
+        `監視対象サーバー: **${guildConfig.guildName}** (${guildConfig.guildId})`,
         `検出数: ${openChannels.length}`,
         ``
       );
 
       for (const ch of openChannels) {
-        const topic = ch.topic ? `\n    トピック: ${ch.topic}` : "";
-        lines.push(`- <#${ch.id}> (\`${ch.id}\`)${topic}`);
+        const topicLine = ch.topic ? `\n    トピック: ${ch.topic}` : "";
+        lines.push(`- <#${ch.id}> (\`${ch.id}\`)${topicLine}`);
       }
 
       lines.push(
         ``,
-        `> 公開で問題ないチャンネルの場合は、ホワイトリスト設定（config.ts）にチャンネルIDを追加してください。`
+        `> 公開で問題ないチャンネルの場合は、このサーバーの whitelist にチャンネルIDを追加してください。`
       );
 
       const message = lines.join("\n");
 
-      await sendChannelMessage(env, guildConfig.alertChannelId, message);
+      // ここで「それぞれの通知チャンネル」を判別している
+      // guildConfig.alertWebhookUrl には管理サーバー側の Webhook URL が入っている想定
+      await sendWebhook(guildConfig.alertWebhookUrl, message);
 
       console.log(
-        `[${guildConfig.guildName}] reported ${openChannels.length} channels.`
+        `[${guildConfig.guildName}] reported ${openChannels.length} channels via webhook.`
       );
     } catch (e) {
       console.error(
