@@ -1,0 +1,11 @@
+name = "discord-permission-guard"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+
+[triggers]
+# 5分ごと
+crons = ["*/5 * * * *"]
+
+[vars]
+# 必要ならここに固定の設定を書いてもOK（文字列のみ）
+# 例: ENVIRONMENT = "prod"
