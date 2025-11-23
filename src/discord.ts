@@ -1,5 +1,5 @@
 // src/discord.ts
-import type { DiscordChannel } from "./types";
+import type { DiscordChannel, DiscordRole } from "./types";
 
 export interface Env {
   DISCORD_BOT_TOKEN: string;
@@ -65,4 +65,25 @@ export async function sendChannelMessage(
     console.error("Failed to send message", channelId, res.status, text);
     throw new Error(`Discord API error (send message): ${res.status}`);
   }
+}
+
+/**
+ * ギルド内の全ロールを取得
+ */
+export async function fetchGuildRoles(
+  env: Env,
+  guildId: string
+): Promise<DiscordRole[]> {
+  const res = await discordFetch(env, `/guilds/${guildId}/roles`, {
+    method: "GET",
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    console.error("Failed to fetch roles", guildId, res.status, text);
+    throw new Error(`Discord API error (roles): ${res.status}`);
+  }
+
+  const data = (await res.json()) as DiscordRole[];
+  return data;
 }

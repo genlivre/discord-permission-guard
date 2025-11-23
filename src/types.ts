@@ -15,3 +15,9 @@ export interface DiscordPermissionOverwrite {
   allow: string; // bitfield string
   deny: string; // bitfield string
 }
+
+export interface DiscordRole {
+  id: string;
+  name: string;
+  permissions: string; // bitfield string
+}

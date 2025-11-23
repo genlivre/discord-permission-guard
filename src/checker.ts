@@ -3,9 +3,13 @@
 import type { Env } from "./discord";
 import type { GuildConfig } from "./config";
 import { GUILDS } from "./config";
-import { fetchGuildChannels } from "./discord";
+import { fetchGuildChannels, fetchGuildRoles } from "./discord";
 import { sendWebhook } from "./webhook";
-import type { DiscordChannel, DiscordPermissionOverwrite } from "./types";
+import type {
+  DiscordChannel,
+  DiscordPermissionOverwrite,
+  DiscordRole,
+} from "./types";
 
 // Discord の VIEW_CHANNEL ビット値（0x400 = 1024）
 const VIEW_CHANNEL_BIT = 1 << 10; // 1024
@@ -21,48 +25,72 @@ interface PublicChannelInfo {
 }
 
 /**
- * @everyone に ViewChannel が Allow されているかどうかを判定する
- *
- * - permission_overwrites の中から
- *   - id === guildId（@everyone ロールと同じID）
- *   - type === 0（role）
- *   の Overwrite を探す
- * - allow に VIEW_CHANNEL ビットが立っていて、
- *   deny には立っていなければ「公開状態」とみなす
+ * ギルドの @everyone デフォルト権限（baseEveryonePerms）と
+ * チャンネルの permission_overwrites を元に、
+ * 「このチャンネルが @everyone から見えるか」を判定する。
  */
-function isOpenToEveryone(channel: DiscordChannel, guildId: string): boolean {
+function isViewableByEveryone(
+  channel: DiscordChannel,
+  guildId: string,
+  baseEveryonePerms: bigint
+): boolean {
+  // ギルドの @everyone ロールに ViewChannel が付いているか
+  const hasBaseView =
+    (baseEveryonePerms & BigInt(VIEW_CHANNEL_BIT)) !== BigInt(0);
+
   const overwrites = channel.permission_overwrites ?? [];
 
+  // このチャンネルに対する @everyone の Overwrite を探す
   const everyoneOverwrite:
     | DiscordPermissionOverwrite
-    | undefined = overwrites.find((o) => o.id === guildId && o.type === 0); // type=0 はロール
+    | undefined = overwrites.find((o) => o.id === guildId && o.type === 0); // type=0 は role
 
+  // Overwrite がなければ、ギルドのデフォルト権限どおり
   if (!everyoneOverwrite) {
-    // 明示的な Allow がない限りここでは問題なしと判断
-    return false;
+    return hasBaseView;
   }
 
   const allow = BigInt(everyoneOverwrite.allow);
   const deny = BigInt(everyoneOverwrite.deny);
 
-  const isAllowed = (allow & BigInt(VIEW_CHANNEL_BIT)) !== BigInt(0);
-  const isDenied = (deny & BigInt(VIEW_CHANNEL_BIT)) !== BigInt(0);
+  const denyView = (deny & BigInt(VIEW_CHANNEL_BIT)) !== BigInt(0);
+  const allowView = (allow & BigInt(VIEW_CHANNEL_BIT)) !== BigInt(0);
 
-  // Allow が立っていて Deny が立っていなければ「公開」
-  return isAllowed && !isDenied;
+  // Deny が明示されていれば見えない
+  if (denyView) return false;
+  // Allow が明示されていれば見える
+  if (allowView) return true;
+
+  // Allow / Deny どちらも Overwrite に書かれていない場合は、
+  // ギルドのデフォルトをそのまま使う。
+  return hasBaseView;
 }
 
 /**
  * 1ギルド分のチャンネルをチェックし、
- * 「@everyone に公開されているのに whitelist に入っていない」
- * チャンネルの一覧を返す
+ * 「@everyone から見える & whitelist ではない」チャンネル一覧を返す。
  */
 async function checkGuild(
   env: Env,
   guildConfig: GuildConfig
 ): Promise<PublicChannelInfo[]> {
   const { guildId, whitelistChannelIds } = guildConfig;
-  const channels = await fetchGuildChannels(env, guildId);
+
+  // チャンネル一覧とロール一覧を並列に取得
+  const [channels, roles] = await Promise.all([
+    fetchGuildChannels(env, guildId),
+    fetchGuildRoles(env, guildId),
+  ]);
+
+  // id === guildId のロールが @everyone
+  const everyoneRole: DiscordRole | undefined = roles.find(
+    (r) => r.id === guildId
+  );
+
+  // @everyone の permissions を BigInt に変換（なければ 0）
+  const baseEveryonePerms = everyoneRole
+    ? BigInt(everyoneRole.permissions)
+    : BigInt(0);
 
   const result: PublicChannelInfo[] = [];
 
@@ -73,7 +101,8 @@ async function checkGuild(
     // ホワイトリスト（公開OKと明示）ならスキップ
     if (whitelistChannelIds.includes(ch.id)) continue;
 
-    if (isOpenToEveryone(ch, guildId)) {
+    // @everyone から見えるかどうか判定
+    if (isViewableByEveryone(ch, guildId, baseEveryonePerms)) {
       result.push({
         id: ch.id,
         name: ch.name,
@@ -87,7 +116,7 @@ async function checkGuild(
 
 /**
  * 全ギルドをチェックして、問題があれば
- * 各ギルドに対応した通知用 Webhook（管理サーバー側）へ送信する
+ * 各ギルドに対応した通知用 Webhook（管理サーバー側）へ送信する。
  */
 export async function runPermissionCheck(env: Env): Promise<void> {
   for (const guildConfig of GUILDS) {
@@ -123,8 +152,7 @@ export async function runPermissionCheck(env: Env): Promise<void> {
 
       const message = lines.join("\n");
 
-      // ここで「それぞれの通知チャンネル」を判別している
-      // guildConfig.alertWebhookUrl には管理サーバー側の Webhook URL が入っている想定
+      // 通知先 Webhook（管理サーバー側）へ送信
       await sendWebhook(guildConfig.alertWebhookUrl, message);
 
       console.log(
