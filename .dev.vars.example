@@ -1,0 +1,10 @@
+# .dev.vars.example
+# このファイルをコピーして .dev.vars を作成してください
+# cp .dev.vars.example .dev.vars
+
+# Discord Bot Token（必須）
+DISCORD_BOT_TOKEN=your_bot_token_here
+
+# ギルド設定（JSON形式）
+# 空配列でOK - 管理画面 (/admin) から設定できます
+GUILDS_CONFIG=[]

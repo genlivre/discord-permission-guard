@@ -12,24 +12,22 @@ export interface GuildConfig {
   whitelistChannelIds: string[];
 }
 
-export const GUILDS: GuildConfig[] = [
-  {
-    guildId: "111111111111111111", // 監視対象A
-    guildName: "コミュニティA",
-    alertWebhookUrl:
-      "https://discord.com/api/webhooks/AAA/BBBBBBBBBBBBBBBBBBBB", // 管理サーバーの #alert-a 用Webhook
-    whitelistChannelIds: [
-      "333333333333333333", // Aサーバーの #お知らせ
-      "444444444444444444", // Aサーバーの #ルール
-    ],
-  },
-  {
-    guildId: "555555555555555555", // 監視対象B
-    guildName: "コミュニティB",
-    alertWebhookUrl:
-      "https://discord.com/api/webhooks/CCC/DDDDDDDDDDDDDDDDDDDD", // 管理サーバーの #alert-b 用Webhook
-    whitelistChannelIds: [
-      "777777777777777777", // Bサーバーの #announcements
-    ],
-  },
-];
+/**
+ * 環境変数からギルド設定を取得
+ * GUILDS_CONFIG: JSON配列形式の文字列
+ */
+export function getGuilds(guildsConfigJson: string | undefined): GuildConfig[] {
+  if (!guildsConfigJson) {
+    console.error("GUILDS_CONFIG environment variable is not set");
+    return [];
+  }
+
+  try {
+    const guilds = JSON.parse(guildsConfigJson) as GuildConfig[];
+    console.log(`Loaded ${guilds.length} guild(s) from config`);
+    return guilds;
+  } catch (error) {
+    console.error("Failed to parse GUILDS_CONFIG:", error);
+    return [];
+  }
+}

@@ -20,4 +20,7 @@ export interface DiscordRole {
   id: string;
   name: string;
   permissions: string; // bitfield string
+  position: number;
+  color: number;
 }
+

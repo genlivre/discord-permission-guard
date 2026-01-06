@@ -2,7 +2,6 @@
 
 import type { Env } from "./discord";
 import type { GuildConfig } from "./config";
-import { GUILDS } from "./config";
 import { fetchGuildChannels, fetchGuildRoles } from "./discord";
 import { sendWebhook } from "./webhook";
 import type {
@@ -118,8 +117,11 @@ async function checkGuild(
  * 全ギルドをチェックして、問題があれば
  * 各ギルドに対応した通知用 Webhook（管理サーバー側）へ送信する。
  */
-export async function runPermissionCheck(env: Env): Promise<void> {
-  for (const guildConfig of GUILDS) {
+export async function runPermissionCheck(
+  env: Env,
+  guilds: GuildConfig[]
+): Promise<void> {
+  for (const guildConfig of guilds) {
     try {
       const openChannels = await checkGuild(env, guildConfig);
 

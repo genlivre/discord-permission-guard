@@ -1,6 +1,10 @@
 node_modules/
 dist/
 .env
+.dev.vars
 .DS_Store
 
-src/config.ts
+wrangler.toml
+.claude
+.vscode
+.wrangler
