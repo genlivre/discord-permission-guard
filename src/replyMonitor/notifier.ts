@@ -80,9 +80,10 @@ export function buildNotificationMessage(
 ): string | null {
   const { guildConfig, state } = result;
   const states = Object.values(state);
+  const baselineAt = guildConfig.replyMonitor?.baselineAt;
 
   const awaitingList = states
-    .filter(isEffectivelyAwaiting)
+    .filter((s) => isEffectivelyAwaiting(s, baselineAt))
     .sort((a, b) => (a.awaitingSince ?? "").localeCompare(b.awaitingSince ?? ""));
   const errorList = states.filter((s) => s.lastError);
 
@@ -169,7 +170,7 @@ export function buildNotificationMessage(
         (s) =>
           !s.lastError &&
           !s.pendingRescan &&
-          !isEffectivelyAwaiting(s) &&
+          !isEffectivelyAwaiting(s, baselineAt) &&
           s.lastHumanMessageAt !== undefined &&
           elapsedDays(s.lastHumanMessageAt, now) >= staleDays
       )

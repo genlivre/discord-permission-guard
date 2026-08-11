@@ -210,6 +210,12 @@ export function renderReplyStatusPage(): string {
               ? \`<span class="chip red">返信待ち \${uncheckedCount} 件</span>\`
               : '<span class="chip green">返信待ちなし</span>'}
             \${checkedCount > 0 ? \`<span class="chip yellow">チェック済み \${checkedCount} 件</span>\` : ''}
+            <span style="margin-left: auto; display: inline-flex; align-items: center; gap: 8px;">
+              \${g.baselineAt ? \`<span class="muted">\${fmtJst(g.baselineAt)} より前は不問</span>\` : ''}
+              \${g.awaitingChannels.length > 0
+                ? \`<button class="secondary btn-sm" onclick="setBaseline('\${g.guildId}', '\${esc(g.guildName)}', \${g.awaitingChannels.length})">これまでの未返信を不問にする</button>\`
+                : ''}
+            </span>
           </div>
           \${awaitingHtml}
           \${staleHtml}
@@ -271,6 +277,23 @@ export function renderReplyStatusPage(): string {
         el.disabled = false;
         document.getElementById('status').innerHTML =
           '<div class="status error">チェックの更新に失敗しました: ' + esc(e.message) + '</div>';
+      }
+    }
+
+    async function setBaseline(guildId, guildName, count) {
+      if (!confirm(guildName + ' の現在の未返信 ' + count + ' 件をすべて不問にしますか？\\n' +
+                   '（以降、新しいメッセージが来たチャンネルだけが改めて通知されます）')) return;
+      try {
+        const res = await fetch('/admin/api/reply-baseline', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ guildId, action: 'set' })
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        await load();
+      } catch (e) {
+        document.getElementById('status').innerHTML =
+          '<div class="status error">基準日時の設定に失敗しました: ' + esc(e.message) + '</div>';
       }
     }
 

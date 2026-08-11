@@ -87,6 +87,36 @@ export async function handleAdminRequest(
       return Response.json({ success: true }, { headers: corsHeaders });
     }
 
+    // API: 基準日時の設定・クリア
+    // set: 現在時刻を基準にし、それより前に終わっている会話を一括で不問にする
+    // clear: 基準を解除してすべてを対象に戻す
+    if (path === "/admin/api/reply-baseline" && request.method === "POST") {
+      const body = (await request.json()) as {
+        guildId?: string;
+        action?: "set" | "clear";
+      };
+      if (!/^\d{17,20}$/.test(body.guildId ?? "")) {
+        return Response.json({ error: "invalid id" }, { status: 400, headers: corsHeaders });
+      }
+
+      const config = await getConfig(env);
+      const guild = config.find((g) => g.guildId === body.guildId);
+      if (!guild?.replyMonitor) {
+        return Response.json({ error: "guild not found" }, { status: 404, headers: corsHeaders });
+      }
+
+      if (body.action === "clear") {
+        delete guild.replyMonitor.baselineAt;
+      } else {
+        guild.replyMonitor.baselineAt = new Date().toISOString();
+      }
+      await saveConfig(env, config);
+      return Response.json(
+        { success: true, baselineAt: guild.replyMonitor.baselineAt ?? null },
+        { headers: corsHeaders }
+      );
+    }
+
     // API: チャンネルを監視対象外にする（除外リストへ追加 + 状態を削除）
     if (path === "/admin/api/reply-exclude" && request.method === "POST") {
       const body = (await request.json()) as {

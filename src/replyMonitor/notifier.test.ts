@@ -153,6 +153,45 @@ describe("buildNotificationMessage", () => {
     expect(message).toContain("**1件**");
   });
 
+  describe("基準日時（baselineAt）", () => {
+    const baselineConfig: GuildConfig = {
+      ...guildConfig,
+      replyMonitor: {
+        enabled: true,
+        staffRoleIds: ["r1"],
+        excludedChannelIds: [],
+        baselineAt: "2026-08-01T00:00:00.000Z",
+      },
+    };
+
+    it("基準日時より前に終わっている会話は通知対象外", () => {
+      const oldConversation = {
+        ...awaitingState,
+        awaitingSince: "2023-07-21T04:30:57.291000+00:00",
+        latestMessageAt: "2023-07-21T04:31:41.731000+00:00",
+      };
+      const message = buildNotificationMessage(
+        { guildConfig: baselineConfig, state: { c1: oldConversation } },
+        "reminder",
+        now
+      );
+      expect(message).toBeNull();
+    });
+
+    it("基準日時より後にメッセージがあれば通知対象（自動復活）", () => {
+      const revived = {
+        ...awaitingState,
+        latestMessageAt: "2026-08-10T00:00:00.000Z",
+      };
+      const message = buildNotificationMessage(
+        { guildConfig: baselineConfig, state: { c1: revived } },
+        "reminder",
+        now
+      );
+      expect(message).toContain("**1件**");
+    });
+  });
+
   it("運営の ✅ が付いたチャンネルは通知対象外", () => {
     const checked = { ...awaitingState, hasStaffCheck: true };
     const message = buildNotificationMessage(

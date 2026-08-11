@@ -168,4 +168,35 @@ describe("buildGuildStatusReport", () => {
     expect(byName["artist-manual-checked"]).toBe(true);
     expect(byName["artist-check-expired"]).toBe(false);
   });
+
+  it("基準日時より前に終わっている会話は一覧自体に含めない", () => {
+    const baselineConfig: GuildConfig = {
+      ...guildConfig,
+      replyMonitor: {
+        ...guildConfig.replyMonitor!,
+        baselineAt: "2026-08-01T00:00:00.000Z",
+      },
+    };
+    const stateMap = {
+      old: state({
+        channelId: "1000000000000000009",
+        channelName: "artist-old",
+        awaitingReply: true,
+        awaitingSince: "2023-07-21T04:30:57.291000+00:00",
+        latestMessageAt: "2023-07-21T04:31:41.731000+00:00",
+      }),
+      recent: state({
+        channelId: "1000000000000000010",
+        channelName: "artist-recent-awaiting",
+        awaitingReply: true,
+        awaitingSince: "2026-08-10T00:00:00.000Z",
+        latestMessageAt: "2026-08-10T00:00:00.000Z",
+      }),
+    };
+    const report = buildGuildStatusReport(baselineConfig, stateMap, now);
+    expect(report.awaitingChannels.map((c) => c.channelName)).toEqual([
+      "artist-recent-awaiting",
+    ]);
+    expect(report.baselineAt).toBe("2026-08-01T00:00:00.000Z");
+  });
 });
