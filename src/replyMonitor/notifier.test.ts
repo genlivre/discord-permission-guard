@@ -129,6 +129,78 @@ describe("buildNotificationMessage", () => {
     expect(message).toBeNull();
   });
 
+  describe("疎遠通知（staleNotifyDays）", () => {
+    const staleConfig: GuildConfig = {
+      ...guildConfig,
+      replyMonitor: {
+        enabled: true,
+        staffRoleIds: ["r1"],
+        excludedChannelIds: [],
+        staleNotifyDays: 14,
+      },
+    };
+    // 20日前にやり取りが止まったチャンネル
+    const staleState = state({
+      channelName: "artist-tanaka",
+      lastHumanMessageAt: "2026-07-22T03:00:00.000Z",
+    });
+
+    it("朝サマリーに設定日数以上やり取りのないチャンネルを載せる", () => {
+      const message = buildNotificationMessage(
+        { guildConfig: staleConfig, state: { c1: staleState } },
+        "morning",
+        now
+      );
+      expect(message).toContain("しばらくやり取りのないチャンネル");
+      expect(message).toContain("#artist-tanaka");
+      expect(message).toContain("最後のやり取りから 20日");
+    });
+
+    it("日中リマインドには疎遠チャンネルを載せない", () => {
+      const message = buildNotificationMessage(
+        { guildConfig: staleConfig, state: { c1: staleState } },
+        "reminder",
+        now
+      );
+      expect(message).toBeNull();
+    });
+
+    it("設定日数未満のチャンネルは載せない", () => {
+      const recent = state({
+        lastHumanMessageAt: "2026-08-05T03:00:00.000Z", // 6日前
+      });
+      const message = buildNotificationMessage(
+        { guildConfig: staleConfig, state: { c1: recent } },
+        "morning",
+        now
+      );
+      expect(message).not.toContain("しばらくやり取りのないチャンネル");
+    });
+
+    it("未返信として列挙済みのチャンネルは疎遠一覧に重複させない", () => {
+      const awaitingAndStale = {
+        ...awaitingState,
+        lastHumanMessageAt: "2026-07-22T03:00:00.000Z",
+      };
+      const message = buildNotificationMessage(
+        { guildConfig: staleConfig, state: { c1: awaitingAndStale } },
+        "morning",
+        now
+      );
+      expect(message).toContain("返信待ちのチャンネルが");
+      expect(message).not.toContain("しばらくやり取りのないチャンネル");
+    });
+
+    it("staleNotifyDays 未設定なら疎遠一覧は出さない", () => {
+      const message = buildNotificationMessage(
+        { guildConfig, state: { c1: staleState } },
+        "morning",
+        now
+      );
+      expect(message).not.toContain("しばらくやり取りのないチャンネル");
+    });
+  });
+
   it("取得エラーのチャンネルはサマリーに明示する（サイレント監視漏れ防止）", () => {
     const errored = state({
       channelId: "c2",

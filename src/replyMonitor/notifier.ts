@@ -18,6 +18,9 @@ const MAX_LISTED_CHANNELS = 10;
 // 取得エラーのチャンネル名の最大表示件数
 const MAX_LISTED_ERRORS = 5;
 
+// 疎遠チャンネル（しばらくやり取りが無い）の最大表示件数
+const MAX_LISTED_STALE = 10;
+
 // Discord の content 上限（UTF-16 コード単位）
 const DISCORD_CONTENT_LIMIT = 2000;
 
@@ -36,6 +39,14 @@ export function formatElapsed(fromIso: string, now: Date): string {
   const minutes = totalMinutes % 60;
   if (hours === 0) return `${minutes}分`;
   return `${hours}時間${String(minutes).padStart(2, "0")}分`;
+}
+
+/**
+ * 経過日数（切り捨て）
+ */
+export function elapsedDays(fromIso: string, now: Date): number {
+  const elapsedMs = Math.max(0, now.getTime() - new Date(fromIso).getTime());
+  return Math.floor(elapsedMs / 86_400_000);
 }
 
 /**
@@ -141,6 +152,39 @@ export function buildNotificationMessage(
     lines.push(
       `> 対応不要な場合は、対象の最終メッセージに ${emojiLabels} リアクションを付けるとアラート対象外になります。`
     );
+  }
+
+  // 疎遠アーティスト検知: staleNotifyDays 日以上「人間のやり取り」が無いチャンネル。
+  // アクションを促すリマインドとは性質が異なるため朝サマリーのみに載せる。
+  // 未返信として上に列挙済みのチャンネルは重複させない。
+  const staleDays = guildConfig.replyMonitor?.staleNotifyDays ?? 0;
+  if (kind === "morning" && staleDays > 0) {
+    const staleList = states
+      .filter(
+        (s) =>
+          !isEffectivelyAwaiting(s) &&
+          s.lastHumanMessageAt &&
+          elapsedDays(s.lastHumanMessageAt, now) >= staleDays
+      )
+      .sort((a, b) =>
+        (a.lastHumanMessageAt ?? "").localeCompare(b.lastHumanMessageAt ?? "")
+      );
+
+    if (staleList.length > 0) {
+      lines.push("");
+      lines.push(
+        `💤 **しばらくやり取りのないチャンネル**（${staleDays}日以上・${staleList.length}件）`
+      );
+      staleList.slice(0, MAX_LISTED_STALE).forEach((s, i) => {
+        const days = elapsedDays(s.lastHumanMessageAt!, now);
+        lines.push(
+          `${i + 1}. **#${s.channelName}** — 最後のやり取りから ${days}日`
+        );
+      });
+      if (staleList.length > MAX_LISTED_STALE) {
+        lines.push(`   …ほか ${staleList.length - MAX_LISTED_STALE} 件`);
+      }
+    }
   }
 
   if (errorList.length > 0) {

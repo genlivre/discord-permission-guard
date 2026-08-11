@@ -18,6 +18,10 @@ export interface ChannelReplyState {
   // 最新の判定対象メッセージ（✅ 確認とジャンプリンクの対象）
   latestMessageId?: string;
   latestMessageAt?: string; // ISO8601
+
+  // 最後に観測した「人間の発言」（運営・アーティスト問わず）の時刻。
+  // 疎遠アーティスト検知（staleNotifyDays）に使う
+  lastHumanMessageAt?: string; // ISO8601
   // 最新メッセージに運営の ✅ リアクションが付いているか（付いていればアラート対象外）
   hasStaffCheck: boolean;
 

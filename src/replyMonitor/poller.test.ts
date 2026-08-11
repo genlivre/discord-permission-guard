@@ -238,6 +238,20 @@ describe("runReplyPoll", () => {
     expect(state.hasStaffCheck).toBe(true);
   });
 
+  it("最後の人間の発言時刻を lastHumanMessageAt として記録する", async () => {
+    const env = makeEnv();
+    vi.mocked(fetchGuildChannels).mockResolvedValue([channel()]);
+    const staffMsg = msg(STAFF_ID);
+    const botMsg = msg("bot-1", { author: { id: "bot-1", bot: true } });
+    // 最新が Bot でも、人間の最新発言（運営）の時刻が採用される
+    vi.mocked(fetchChannelMessages).mockResolvedValue([botMsg, staffMsg]);
+
+    const [result] = await runReplyPoll(env, [guildConfig]);
+    const state = result.state[CHANNEL_ID];
+    expect(state.awaitingReply).toBe(false);
+    expect(state.lastHumanMessageAt).toBe(staffMsg.timestamp);
+  });
+
   it("除外チャンネルとフォーラムは監視対象にしない", async () => {
     const env = makeEnv();
     const excluded = channel({ id: "8888888888888888888", name: "staff-room" });
