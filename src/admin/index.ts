@@ -1,5 +1,7 @@
 // src/admin/index.ts
 import { renderAdminPage } from "./html";
+import { renderReplyStatusPage } from "./replyStatusPage";
+import { buildAllGuildStatusReports } from "../replyMonitor/statusApi";
 import {
   getConfig,
   saveConfig,
@@ -38,6 +40,22 @@ export async function handleAdminRequest(
     if (path === "/admin" || path === "/admin/") {
       return new Response(renderAdminPage(), {
         headers: { "Content-Type": "text/html; charset=utf-8" },
+      });
+    }
+
+    // 未返信チェックページ（毎朝の定例での指差し確認用）
+    if (path === "/admin/reply-status") {
+      return new Response(renderReplyStatusPage(), {
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+      });
+    }
+
+    // API: 全ギルドの未返信状態（上記ページ用）
+    if (path === "/admin/api/reply-status-all" && request.method === "GET") {
+      const config = await getConfig(env);
+      const report = await buildAllGuildStatusReports(env, config);
+      return Response.json(report, {
+        headers: { ...corsHeaders, "Cache-Control": "no-store" },
       });
     }
 

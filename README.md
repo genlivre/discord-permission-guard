@@ -176,13 +176,7 @@ npx wrangler secret put DISCORD_BOT_TOKEN
 # プロンプトが出るので Bot トークンを貼り付け
 ```
 
-外部システム（管理画面バックエンド等）から未返信状態を取得する場合は、
-サーバー間認証用のトークンも Secret に登録します（未設定なら API は無効のまま）。
-
-```bash
-openssl rand -hex 32 | npx wrangler secret put REPLY_STATUS_API_TOKEN
-# 同じ値を呼び出し側サーバーの環境変数にも設定する
-```
+未返信状況の閲覧は `/admin/reply-status`（Cloudflare Access 保護下）で行います。
 
 ---
 
@@ -215,7 +209,8 @@ npx wrangler dev
 | `GET /run` | 権限チェックを即座に実行 |
 | `GET /run-reply` | 返信監視ポーリングを即座に実行し、未返信状態を JSON で返す |
 | `GET /run-reply?kind=morning` | ポーリング + 朝サマリー通知まで実行（`kind=reminder` で日中リマインド） |
-| `GET /api/reply-status` | 未返信状態の読み取りAPI（サーバー間通信専用。`Authorization: Bearer <REPLY_STATUS_API_TOKEN>` 必須。Secret 未設定時は 404） |
+| `GET /admin/reply-status` | 未返信チェックページ（毎朝の定例での指差し確認用。/admin 同様 Cloudflare Access で保護） |
+| `GET /admin/api/reply-status-all` | 上記ページ用の全ギルド未返信状態 API |
 | `GET /admin` | 管理画面 |
 | `GET /admin/api/*` | 管理画面用 API |
 
