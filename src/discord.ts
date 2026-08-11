@@ -1,5 +1,11 @@
 // src/discord.ts
-import type { DiscordChannel, DiscordRole } from "./types";
+import type {
+  DiscordChannel,
+  DiscordGuildMember,
+  DiscordMessage,
+  DiscordRole,
+  DiscordUser,
+} from "./types";
 
 export interface Env {
   DISCORD_BOT_TOKEN: string;
@@ -17,13 +23,33 @@ async function discordFetch(
     "Content-Type": "application/json",
   };
 
-  return fetch(DISCORD_API_BASE + path, {
-    ...init,
-    headers: {
-      ...headers,
-      ...(init?.headers ?? {}),
-    },
-  });
+  const doFetch = () =>
+    fetch(DISCORD_API_BASE + path, {
+      ...init,
+      headers: {
+        ...headers,
+        ...(init?.headers ?? {}),
+      },
+    });
+
+  let res = await doFetch();
+
+  // レートリミット (429) は Retry-After を尊重して1回だけリトライ。
+  // 待機が10秒を超える指示の場合は Cron の実行時間を守るためリトライせず
+  // そのままエラーにする（該当チャンネルは次回実行で再試行される）。
+  if (res.status === 429) {
+    const retryAfter = Number(res.headers.get("Retry-After") ?? "1");
+    if (retryAfter <= 10) {
+      const waitMs = Math.max(retryAfter, 0.5) * 1000;
+      console.warn(`Rate limited on ${path}, retrying after ${waitMs}ms`);
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+      res = await doFetch();
+    } else {
+      console.warn(`Rate limited on ${path}, Retry-After=${retryAfter}s — giving up`);
+    }
+  }
+
+  return res;
 }
 
 /**
@@ -65,6 +91,85 @@ export async function sendChannelMessage(
     console.error("Failed to send message", channelId, res.status, text);
     throw new Error(`Discord API error (send message): ${res.status}`);
   }
+}
+
+/**
+ * チャンネルの直近メッセージを取得（新しい順）
+ */
+export async function fetchChannelMessages(
+  env: Env,
+  channelId: string,
+  limit = 20
+): Promise<DiscordMessage[]> {
+  const res = await discordFetch(
+    env,
+    `/channels/${channelId}/messages?limit=${limit}`,
+    { method: "GET" }
+  );
+
+  if (!res.ok) {
+    const text = await res.text();
+    console.error("Failed to fetch messages", channelId, res.status, text);
+    throw new Error(`Discord API error (messages): ${res.status}`);
+  }
+
+  return (await res.json()) as DiscordMessage[];
+}
+
+/**
+ * ギルドメンバーを取得（脱退済みなど 404 の場合は null）
+ */
+export async function fetchGuildMember(
+  env: Env,
+  guildId: string,
+  userId: string
+): Promise<DiscordGuildMember | null> {
+  const res = await discordFetch(env, `/guilds/${guildId}/members/${userId}`, {
+    method: "GET",
+  });
+
+  if (res.status === 404) {
+    return null;
+  }
+
+  if (!res.ok) {
+    const text = await res.text();
+    console.error("Failed to fetch member", guildId, userId, res.status, text);
+    throw new Error(`Discord API error (member): ${res.status}`);
+  }
+
+  return (await res.json()) as DiscordGuildMember;
+}
+
+/**
+ * メッセージに特定の絵文字リアクションを付けたユーザー一覧を取得
+ */
+export async function fetchReactionUsers(
+  env: Env,
+  channelId: string,
+  messageId: string,
+  emoji: string
+): Promise<DiscordUser[]> {
+  const encoded = encodeURIComponent(emoji);
+  const res = await discordFetch(
+    env,
+    `/channels/${channelId}/messages/${messageId}/reactions/${encoded}?limit=100`,
+    { method: "GET" }
+  );
+
+  if (!res.ok) {
+    const text = await res.text();
+    console.error(
+      "Failed to fetch reaction users",
+      channelId,
+      messageId,
+      res.status,
+      text
+    );
+    throw new Error(`Discord API error (reactions): ${res.status}`);
+  }
+
+  return (await res.json()) as DiscordUser[];
 }
 
 /**

@@ -8,7 +8,9 @@ compatibility_date = "2025-01-01"
 
 [triggers]
 crons = [
-  "*/10 * * * *"  # 権限チェック（10分毎）
+  "*/10 * * * *",  # 権限チェック + 返信監視ポーリング（10分毎）
+  "45 23 * * *",   # 未返信の朝サマリー（23:45 UTC = 8:45 JST）
+  "0 6 * * *"      # 未返信の日中リマインド（6:00 UTC = 15:00 JST）
 ]
 
 # KV Namespace for config storage
