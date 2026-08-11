@@ -139,6 +139,25 @@ describe("buildNotificationMessage", () => {
     expect(message).toBeNull();
   });
 
+  it("「不問」にしたチャンネルは通知対象外、新しいメッセージが来たら復活する", () => {
+    const dismissed = {
+      ...awaitingState,
+      latestMessageId: MESSAGE_ID,
+      dismissedMessageId: MESSAGE_ID,
+    };
+    expect(
+      buildNotificationMessage({ guildConfig, state: { c1: dismissed } }, "reminder", now)
+    ).toBeNull();
+
+    const revived = {
+      ...dismissed,
+      latestMessageId: "9999999999999999999", // 不問後に新着 → 失効
+    };
+    expect(
+      buildNotificationMessage({ guildConfig, state: { c1: revived } }, "reminder", now)
+    ).toContain("**1件**");
+  });
+
   it("チェック後に新しいメッセージが来たら再びアラート対象になる", () => {
     const reawakened = {
       ...awaitingState,

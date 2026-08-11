@@ -88,8 +88,9 @@ export function renderReplyStatusPage(): string {
       </span>
     </div>
     <p class="sub">
-      「最新の発言が運営以外のまま」のチャンネル一覧です。チェックを付けると対応済み扱いになり通知からも外れます
-      （新しいメッセージが来ると自動で未対応に戻ります）。Discord 側で最終メッセージに ✅ を付けても外れます。
+      「最新の発言が運営以外のまま」のチャンネル一覧です。
+      チェック＝対応した ／ 不問＝対応不要のまま放置でOK（どちらも新しいメッセージが来ると自動で通知対象に戻ります）。
+      Discord 側で最終メッセージに ✅ を付けても外れます。
       <span id="generated-at"></span>
     </p>
     <div style="margin-bottom: 14px;">
@@ -154,6 +155,7 @@ export function renderReplyStatusPage(): string {
           <td style="white-space: nowrap;">
             <a class="button secondary btn-sm" href="\${esc(ch.jumpUrl)}" target="_blank" rel="noopener noreferrer">メッセージ ↗</a>
             <a class="button secondary btn-sm" href="\${esc(ch.channelUrl)}" target="_blank" rel="noopener noreferrer">チャンネル ↗</a>
+            <button class="secondary btn-sm" onclick="dismissChannel('\${g.guildId}', '\${ch.channelId}', '\${esc(ch.channelName)}')">不問にする</button>
             <button class="danger btn-sm" onclick="excludeChannel('\${g.guildId}', '\${ch.channelId}', '\${esc(ch.channelName)}')">対象外にする</button>
           </td>
         </tr>
@@ -196,6 +198,21 @@ export function renderReplyStatusPage(): string {
         </div>
       \` : '';
 
+      const dismissedHtml = g.dismissedChannels.length > 0 ? \`
+        <div class="section">
+          <h3 class="section-title">🔕 不問中のチャンネル（\${g.dismissedChannels.length}件・新しいメッセージが来たら自動で通知対象に戻ります）</h3>
+          <div class="tag-list">
+            \${g.dismissedChannels.map(ch => \`
+              <span class="tag">
+                #\${esc(ch.channelName)}
+                <a href="\${esc(ch.channelUrl)}" target="_blank" rel="noopener noreferrer" style="color: #7289da; text-decoration: none;">↗</a>
+                <span style="color: #ed4245; cursor: pointer;" onclick="undismissChannel('\${g.guildId}', '\${ch.channelId}')">解除</span>
+              </span>
+            \`).join('')}
+          </div>
+        </div>
+      \` : '';
+
       const pendingHtml = g.pendingRescanCount > 0
         ? \`<div class="warn-banner">⏳ データ取得中のチャンネルが \${g.pendingRescanCount} 件あります（一覧は不完全です。数十分後に再確認してください）</div>\`
         : '';
@@ -210,14 +227,10 @@ export function renderReplyStatusPage(): string {
               ? \`<span class="chip red">返信待ち \${uncheckedCount} 件</span>\`
               : '<span class="chip green">返信待ちなし</span>'}
             \${checkedCount > 0 ? \`<span class="chip yellow">チェック済み \${checkedCount} 件</span>\` : ''}
-            <span style="margin-left: auto; display: inline-flex; align-items: center; gap: 8px;">
-              \${g.baselineAt ? \`<span class="muted">\${fmtJst(g.baselineAt)} より前は不問</span>\` : ''}
-              \${g.awaitingChannels.length > 0
-                ? \`<button class="secondary btn-sm" onclick="setBaseline('\${g.guildId}', '\${esc(g.guildName)}', \${g.awaitingChannels.length})">これまでの未返信を不問にする</button>\`
-                : ''}
-            </span>
+            \${g.baselineAt ? \`<span class="muted" style="margin-left: auto;">\${fmtJst(g.baselineAt)} より前は不問</span>\` : ''}
           </div>
           \${awaitingHtml}
+          \${dismissedHtml}
           \${staleHtml}
           \${errorHtml}
           \${pendingHtml}
@@ -280,20 +293,46 @@ export function renderReplyStatusPage(): string {
       }
     }
 
-    async function setBaseline(guildId, guildName, count) {
-      if (!confirm(guildName + ' の現在の未返信 ' + count + ' 件をすべて不問にしますか？\\n' +
-                   '（以降、新しいメッセージが来たチャンネルだけが改めて通知されます）')) return;
+    async function dismissChannel(guildId, channelId, channelName) {
+      if (!confirm('#' + channelName + ' を不問にしますか？\\n' +
+                   '（一覧と通知から外れます。新しいメッセージが来たら自動で通知対象に戻ります）')) return;
       try {
-        const res = await fetch('/admin/api/reply-baseline', {
+        const res = await fetch('/admin/api/reply-dismiss', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ guildId, action: 'set' })
+          body: JSON.stringify({ guildId, channelId, dismissed: true })
         });
         if (!res.ok) throw new Error('HTTP ' + res.status);
+        const guild = currentData.guilds.find(g => g.guildId === guildId);
+        if (guild) {
+          const ch = guild.awaitingChannels.find(c => c.channelId === channelId);
+          guild.awaitingChannels = guild.awaitingChannels.filter(c => c.channelId !== channelId);
+          guild.dismissedChannels.push({
+            channelId,
+            channelName: ch ? ch.channelName : channelName,
+            channelUrl: ch ? ch.channelUrl : ''
+          });
+        }
+        renderAll();
+      } catch (e) {
+        document.getElementById('status').innerHTML =
+          '<div class="status error">不問への変更に失敗しました: ' + esc(e.message) + '</div>';
+      }
+    }
+
+    async function undismissChannel(guildId, channelId) {
+      try {
+        const res = await fetch('/admin/api/reply-dismiss', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ guildId, channelId, dismissed: false })
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        // 解除後は未返信一覧へ戻る可能性があるためサーバーから再取得
         await load();
       } catch (e) {
         document.getElementById('status').innerHTML =
-          '<div class="status error">基準日時の設定に失敗しました: ' + esc(e.message) + '</div>';
+          '<div class="status error">不問の解除に失敗しました: ' + esc(e.message) + '</div>';
       }
     }
 
@@ -311,6 +350,7 @@ export function renderReplyStatusPage(): string {
           guild.awaitingChannels = guild.awaitingChannels.filter(c => c.channelId !== channelId);
           guild.staleChannels = guild.staleChannels.filter(c => c.channelId !== channelId);
           guild.errorChannels = guild.errorChannels.filter(c => c.channelId !== channelId);
+          guild.dismissedChannels = guild.dismissedChannels.filter(c => c.channelId !== channelId);
           guild.totalWatchedChannels -= 1;
         }
         renderAll();

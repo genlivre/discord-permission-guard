@@ -317,8 +317,9 @@ async function pollGuild(
           latestMessageAt: result.latestMessage.timestamp,
           lastHumanMessageAt,
           hasStaffCheck: staffCheck,
-          // 「対応済み」チェックは引き継ぐ（latestMessageId が変われば自動失効する）
+          // 「対応済み」チェックと「不問」は引き継ぐ（latestMessageId が変われば自動失効する）
           manualCheckMessageId: prev?.manualCheckMessageId,
+          dismissedMessageId: prev?.dismissedMessageId,
           configVersion,
           updatedAt: now,
         };

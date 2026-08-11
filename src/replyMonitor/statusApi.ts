@@ -7,6 +7,7 @@
 import type { GuildConfig } from "../config";
 import { elapsedDays } from "./notifier";
 import {
+  hasValidDismiss,
   hasValidManualCheck,
   isEffectivelyAwaiting,
   loadGuildReplyState,
@@ -56,6 +57,12 @@ export interface GuildStatusReport {
     lastErrorAt: string | null;
     channelUrl: string;
   }>;
+  // 「不問」中のチャンネル（解除UI用）
+  dismissedChannels: Array<{
+    channelId: string;
+    channelName: string;
+    channelUrl: string;
+  }>;
 }
 
 /**
@@ -79,9 +86,16 @@ export function buildGuildStatusReport(
   };
 
   // 「対応済み」チェックが付いたものも一覧には含め（フラグ付き）、
-  // 画面側で絞り込み表示できるようにする。運営の ✅ 済みは従来どおり含めない
+  // 画面側で絞り込み表示できるようにする。
+  // 運営の ✅ 済み・「不問」中・基準日時より前のものは一覧に含めない
   const awaitingChannels = states
-    .filter((s) => s.awaitingReply && !s.hasStaffCheck && !isBeforeBaseline(s))
+    .filter(
+      (s) =>
+        s.awaitingReply &&
+        !s.hasStaffCheck &&
+        !hasValidDismiss(s) &&
+        !isBeforeBaseline(s)
+    )
     .sort((a, b) => (a.awaitingSince ?? "").localeCompare(b.awaitingSince ?? ""))
     .map((s) => ({
       channelId: s.channelId,
@@ -128,6 +142,15 @@ export function buildGuildStatusReport(
       channelUrl: channelUrl(guildConfig.guildId, s.channelId),
     }));
 
+  const dismissedChannels = states
+    .filter((s) => hasValidDismiss(s))
+    .sort((a, b) => a.channelName.localeCompare(b.channelName))
+    .map((s) => ({
+      channelId: s.channelId,
+      channelName: s.channelName,
+      channelUrl: channelUrl(guildConfig.guildId, s.channelId),
+    }));
+
   return {
     guildId: guildConfig.guildId,
     guildName: guildConfig.guildName,
@@ -138,6 +161,7 @@ export function buildGuildStatusReport(
     awaitingChannels,
     staleChannels,
     errorChannels,
+    dismissedChannels,
   };
 }
 

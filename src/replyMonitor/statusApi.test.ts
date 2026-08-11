@@ -169,6 +169,24 @@ describe("buildGuildStatusReport", () => {
     expect(byName["artist-check-expired"]).toBe(false);
   });
 
+  it("「不問」中のチャンネルは未返信一覧から外れ、dismissedChannels に載る", () => {
+    const stateMap = {
+      dismissed: state({
+        channelId: "1000000000000000011",
+        channelName: "artist-dismissed",
+        awaitingReply: true,
+        awaitingSince: "2026-08-10T00:00:00.000Z",
+        latestMessageId: "m300",
+        dismissedMessageId: "m300",
+      }),
+    };
+    const report = buildGuildStatusReport(guildConfig, stateMap, now);
+    expect(report.awaitingChannels).toHaveLength(0);
+    expect(report.dismissedChannels.map((c) => c.channelName)).toEqual([
+      "artist-dismissed",
+    ]);
+  });
+
   it("基準日時より前に終わっている会話は一覧自体に含めない", () => {
     const baselineConfig: GuildConfig = {
       ...guildConfig,

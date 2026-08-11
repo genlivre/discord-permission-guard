@@ -87,6 +87,33 @@ export async function handleAdminRequest(
       return Response.json({ success: true }, { headers: corsHeaders });
     }
 
+    // API: 「不問」（対応不要のまま放置でOK）の設定・解除
+    // 仕組みはチェックと同じで、新しいメッセージが来ると自動失効して再通知される
+    if (path === "/admin/api/reply-dismiss" && request.method === "POST") {
+      const body = (await request.json()) as {
+        guildId?: string;
+        channelId?: string;
+        dismissed?: boolean;
+      };
+      if (!/^\d{17,20}$/.test(body.guildId ?? "") || !/^\d{17,20}$/.test(body.channelId ?? "")) {
+        return Response.json({ error: "invalid id" }, { status: 400, headers: corsHeaders });
+      }
+
+      const state = await loadGuildReplyState(env, body.guildId!);
+      const entry = state[body.channelId!];
+      if (!entry) {
+        return Response.json({ error: "channel state not found" }, { status: 404, headers: corsHeaders });
+      }
+
+      if (body.dismissed) {
+        entry.dismissedMessageId = entry.latestMessageId ?? entry.lastObservedMessageId ?? undefined;
+      } else {
+        delete entry.dismissedMessageId;
+      }
+      await saveGuildReplyState(env, body.guildId!, state);
+      return Response.json({ success: true }, { headers: corsHeaders });
+    }
+
     // API: 基準日時の設定・クリア
     // set: 現在時刻を基準にし、それより前に終わっている会話を一括で不問にする
     // clear: 基準を解除してすべてを対象に戻す
