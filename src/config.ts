@@ -15,6 +15,11 @@ export interface ReplyMonitorConfig {
   // 標準絵文字は絵文字そのもの（例: "✅"）、カスタム絵文字は "名前:ID" 形式。
   // 未設定・空の場合は ✅ のみが対象（後方互換）。
   resolveReactionEmojis?: string[];
+
+  // この日数以上「人間のやり取り」が無いチャンネルを朝サマリーで
+  // 「しばらくやり取りのないチャンネル」として通知する（疎遠アーティスト検知）。
+  // 未設定・0 の場合は無効。
+  staleNotifyDays?: number;
 }
 
 // resolveReactionEmojis 未設定時のデフォルト

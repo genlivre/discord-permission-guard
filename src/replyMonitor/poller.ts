@@ -147,11 +147,18 @@ export interface GuildPollResult {
 }
 
 /** 判定設定のバージョン文字列（設定変更後の強制再判定に使う） */
-function configVersionOf(staffRoleIds: string[], resolveEmojis: string[]): string {
+function configVersionOf(
+  staffRoleIds: string[],
+  resolveEmojis: string[],
+  staleNotifyDays: number | undefined
+): string {
   return JSON.stringify({
-    v: 1,
+    // v はロジック変更時にインクリメントする（全チャンネルの再判定を促す）
+    v: 2,
     staff: [...staffRoleIds].sort(),
     emojis: [...resolveEmojis].sort(),
+    // stale 検知の有効化時に lastHumanMessageAt を全チャンネルで採取し直すため含める
+    staleEnabled: (staleNotifyDays ?? 0) > 0,
   });
 }
 
@@ -185,7 +192,11 @@ async function pollGuild(
   const { guildId } = guildConfig;
   const monitor = guildConfig.replyMonitor!;
   const resolveEmojis = resolveEmojisOf(monitor);
-  const configVersion = configVersionOf(monitor.staffRoleIds, resolveEmojis);
+  const configVersion = configVersionOf(
+    monitor.staffRoleIds,
+    resolveEmojis,
+    monitor.staleNotifyDays
+  );
   const staffChecker = new StaffChecker(env, guildId, monitor.staffRoleIds, budget);
 
   budget.consume();
@@ -223,6 +234,15 @@ async function pollGuild(
       const messages = await fetchChannelMessages(env, ch.id, CHANNEL_FETCH_LIMIT);
       const judgeable = filterJudgeable(messages);
       const historyComplete = messages.length < CHANNEL_FETCH_LIMIT;
+
+      // 疎遠検知用: 最後に観測した人間の発言時刻。
+      // 見つからなければ前回値を維持し、前回値より古い方向へは巻き戻さない
+      const fetchedHumanAt = judgeable[0]?.timestamp;
+      const lastHumanMessageAt =
+        fetchedHumanAt &&
+        (!prev?.lastHumanMessageAt || fetchedHumanAt > prev.lastHumanMessageAt)
+          ? fetchedHumanAt
+          : prev?.lastHumanMessageAt;
 
       // 取得範囲に判定対象（人間の発言）が1件も無く、かつ履歴を遡り切れていない場合、
       // 「返信済み」とは確定できない。前回状態を維持し、未返信の見逃しを防ぐ。
@@ -282,6 +302,7 @@ async function pollGuild(
           awaitingSinceMessageId,
           latestMessageId: result.latestMessage.id,
           latestMessageAt: result.latestMessage.timestamp,
+          lastHumanMessageAt,
           hasStaffCheck: staffCheck,
           configVersion,
           updatedAt: now,
@@ -292,6 +313,7 @@ async function pollGuild(
           channelName: ch.name,
           lastObservedMessageId: observedLastMessageId,
           awaitingReply: false,
+          lastHumanMessageAt,
           hasStaffCheck: false,
           configVersion,
           updatedAt: now,
@@ -299,9 +321,13 @@ async function pollGuild(
       }
     } catch (e) {
       if (e instanceof BudgetExhaustedError) {
-        // API バジェット超過: エラーではなく持ち越し。次回実行で処理される
+        // API バジェット超過: エラーではなく持ち越し。次回実行で処理される。
+        // 持ち越し中は疎遠一覧の完全性が保証できないためフラグで可視化する
         console.warn(`API budget exhausted, deferring channel ${ch.id} (${ch.name})`);
-        nextState[ch.id] = carryOver(prev, ch.id, ch.name);
+        nextState[ch.id] = {
+          ...carryOver(prev, ch.id, ch.name),
+          pendingRescan: true,
+        };
         continue;
       }
 

@@ -274,6 +274,11 @@ export function renderAdminPage(): string {
                      placeholder="✅, 🙆, party_parrot:123456789012345678"
                      onchange="updateResolveEmojis(\${idx}, this.value)">
 
+              <div class="section-title" style="margin-top: 12px;">疎遠通知（この日数以上やり取りが無いチャンネルを朝サマリーで通知。空欄で無効）</div>
+              <input type="number" min="1" max="365" value="\${rm.staleNotifyDays ?? ''}"
+                     placeholder="例: 14"
+                     onchange="updateStaleNotifyDays(\${idx}, this.value)">
+
               <div class="section-title" style="margin-top: 12px;">監視除外チャンネル（運営内部チャンネルなど） (\${rm.excludedChannelIds.length}件)</div>
               <div class="tag-list">
                 \${rm.excludedChannelIds.map(id => \`<span class="tag">\${escapeHtml(getChannelName(guild.guildId, id))}<span class="remove" onclick="removeFromList(\${idx}, 'rm.excludedChannelIds', '\${id}')">&times;</span></span>\`).join('')}
@@ -291,6 +296,18 @@ export function renderAdminPage(): string {
 
     function updateReplyMonitorEnabled(idx, enabled) {
       ensureReplyMonitor(config[idx]).enabled = enabled;
+      renderGuilds();
+    }
+
+    function updateStaleNotifyDays(idx, value) {
+      // parseInt だと "14abc" 等を受理してしまうため Number で厳密に解釈する
+      const days = Number(value);
+      const rm = ensureReplyMonitor(config[idx]);
+      if (value !== '' && Number.isInteger(days) && days >= 1 && days <= 365) {
+        rm.staleNotifyDays = days;
+      } else {
+        delete rm.staleNotifyDays;
+      }
       renderGuilds();
     }
 

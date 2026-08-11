@@ -67,6 +67,14 @@ export function validateConfig(config: GuildConfig[]): string | null {
     if (rm.enabled && (rm.staffRoleIds ?? []).length === 0) {
       return `${guild.guildName}: 返信忘れ監視を有効にするには運営ロールを1つ以上設定してください`;
     }
+    if (
+      rm.staleNotifyDays !== undefined &&
+      (!Number.isInteger(rm.staleNotifyDays) ||
+        rm.staleNotifyDays < 1 ||
+        rm.staleNotifyDays > 365)
+    ) {
+      return `疎遠通知の日数は 1〜365 の整数で指定してください: ${JSON.stringify(rm.staleNotifyDays)}`;
+    }
     const emojis = rm.resolveReactionEmojis ?? [];
     if (emojis.length > 10) {
       return "対応済みリアクションは10個までにしてください";

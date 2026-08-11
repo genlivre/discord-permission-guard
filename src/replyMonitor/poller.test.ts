@@ -238,6 +238,44 @@ describe("runReplyPoll", () => {
     expect(state.hasStaffCheck).toBe(true);
   });
 
+  it("最後の人間の発言時刻を lastHumanMessageAt として記録する", async () => {
+    const env = makeEnv();
+    vi.mocked(fetchGuildChannels).mockResolvedValue([channel()]);
+    const staffMsg = msg(STAFF_ID);
+    const botMsg = msg("bot-1", { author: { id: "bot-1", bot: true } });
+    // 最新が Bot でも、人間の最新発言（運営）の時刻が採用される
+    vi.mocked(fetchChannelMessages).mockResolvedValue([botMsg, staffMsg]);
+
+    const [result] = await runReplyPoll(env, [guildConfig]);
+    const state = result.state[CHANNEL_ID];
+    expect(state.awaitingReply).toBe(false);
+    expect(state.lastHumanMessageAt).toBe(staffMsg.timestamp);
+  });
+
+  it("APIバジェット超過で持ち越したチャンネルには pendingRescan を立てる", async () => {
+    const env = makeEnv();
+    // バジェット(40)超過を起こす: guild取得1 + member取得1 + チャンネルごとにメッセージ取得1
+    const manyChannels = Array.from({ length: 45 }, (_, i) =>
+      channel({
+        id: `90000000000000${String(10000 + i)}`,
+        name: `artist-${i}`,
+      })
+    );
+    vi.mocked(fetchGuildChannels).mockResolvedValue(manyChannels);
+    vi.mocked(fetchChannelMessages).mockResolvedValue([msg(ARTIST_ID)]);
+
+    const [result] = await runReplyPoll(env, [guildConfig]);
+    const states = Object.values(result.state);
+    const deferred = states.filter((s) => s.pendingRescan);
+    const processed = states.filter((s) => !s.pendingRescan);
+
+    expect(deferred.length).toBeGreaterThan(0);
+    expect(processed.length).toBeGreaterThan(0);
+    expect(deferred.length + processed.length).toBe(45);
+    // 持ち越しはエラー扱いにしない（次回実行で自動処理される）
+    expect(deferred.every((s) => !s.lastError)).toBe(true);
+  });
+
   it("除外チャンネルとフォーラムは監視対象にしない", async () => {
     const env = makeEnv();
     const excluded = channel({ id: "8888888888888888888", name: "staff-room" });
