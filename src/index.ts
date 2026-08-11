@@ -3,6 +3,7 @@ import { runPermissionCheck } from "./checker";
 import { handleAdminRequest, getConfig, type AdminEnv } from "./admin";
 import { runReplyPoll } from "./replyMonitor/poller";
 import { runReplyNotification } from "./replyMonitor/notifier";
+import { handleReplyStatusRequest } from "./replyMonitor/statusApi";
 import type { Env as DiscordEnv } from "./discord";
 
 export interface Env extends DiscordEnv {
@@ -10,6 +11,8 @@ export interface Env extends DiscordEnv {
   GUILDS_CONFIG?: string; // JSON形式のギルド設定（KV未設定時のフォールバック）
   // 返信監視: 1ギルドあたりの Discord API 呼び出し上限（既定 40。Paid プランなら "250" 等に引き上げ）
   REPLY_API_BUDGET_PER_GUILD?: string;
+  // 未返信状態API（/api/reply-status）のサーバー間認証トークン（Secret。未設定なら機能無効）
+  REPLY_STATUS_API_TOKEN?: string;
 }
 
 // Cron 式（wrangler.toml の [triggers].crons と一致させること）
@@ -74,6 +77,11 @@ export default {
 
     // KVから設定を取得
     const guilds = await getConfig(env as AdminEnv);
+
+    // 未返信状態の読み取りAPI（サーバー間通信専用・Bearer トークン認証）
+    if (url.pathname === "/api/reply-status" && request.method === "GET") {
+      return handleReplyStatusRequest(request, env, guilds);
+    }
 
     if (url.pathname === "/run") {
       await runPermissionCheck(env, guilds);
