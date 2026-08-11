@@ -90,10 +90,23 @@ export function hasValidManualCheck(state: ChannelReplyState): boolean {
 
 /**
  * アラート対象（実効未返信）かどうか。
- * 未返信かつ、運営の ✅ も管理画面の「対応済み」チェックも付いていないもの。
+ * 未返信かつ、運営の ✅ も管理画面の「対応済み」チェックも付いておらず、
+ * 基準日時（baselineAt）より後にメッセージがあるもの。
+ * 基準日時より前に終わっている会話は「不問」扱い（新着が来れば自動復活）。
  */
-export function isEffectivelyAwaiting(state: ChannelReplyState): boolean {
-  return (
-    state.awaitingReply && !state.hasStaffCheck && !hasValidManualCheck(state)
-  );
+export function isEffectivelyAwaiting(
+  state: ChannelReplyState,
+  baselineAt?: string
+): boolean {
+  if (!state.awaitingReply || state.hasStaffCheck || hasValidManualCheck(state)) {
+    return false;
+  }
+  if (baselineAt && state.latestMessageAt) {
+    const baseline = Date.parse(baselineAt);
+    const latest = Date.parse(state.latestMessageAt);
+    if (!Number.isNaN(baseline) && !Number.isNaN(latest) && latest < baseline) {
+      return false;
+    }
+  }
+  return true;
 }

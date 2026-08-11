@@ -275,6 +275,12 @@ export function renderAdminPage(): string {
                      placeholder="✅, 🙆, party_parrot:123456789012345678"
                      onchange="updateResolveEmojis(\${idx}, this.value)">
 
+              <div class="section-title" style="margin-top: 12px;">基準日時（これより前に終わっている会話は未返信扱いにしない。設定は「未返信チェック」ページの「これまでの未返信を不問にする」ボタンから）</div>
+              <div class="row">
+                <span style="font-size: 13px; color: #dcddde;">\${rm.baselineAt ? new Date(rm.baselineAt).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }) + ' より前は不問' : '未設定（すべて対象）'}</span>
+                \${rm.baselineAt ? \`<button class="danger" style="padding: 4px 10px; font-size: 12px;" onclick="clearBaseline(\${idx})">クリア</button>\` : ''}
+              </div>
+
               <div class="section-title" style="margin-top: 12px;">疎遠通知（この日数以上やり取りが無いチャンネルを朝サマリーで通知。空欄で無効）</div>
               <input type="number" min="1" max="365" value="\${rm.staleNotifyDays ?? ''}"
                      placeholder="例: 14"
@@ -298,6 +304,13 @@ export function renderAdminPage(): string {
     function updateReplyMonitorEnabled(idx, enabled) {
       ensureReplyMonitor(config[idx]).enabled = enabled;
       renderGuilds();
+    }
+
+    function clearBaseline(idx) {
+      if (!confirm('基準日時をクリアして、過去の未返信もすべて対象に戻しますか？')) return;
+      delete ensureReplyMonitor(config[idx]).baselineAt;
+      renderGuilds();
+      showStatus('基準日時をクリアしました。「設定を保存」を押すと反映されます', 'success');
     }
 
     function updateStaleNotifyDays(idx, value) {

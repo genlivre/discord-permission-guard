@@ -29,6 +29,8 @@ export interface GuildStatusReport {
   totalWatchedChannels: number;
   pendingRescanCount: number;
   staleNotifyDays: number | null;
+  // 基準日時（これより前に終わっている会話は不問）。未設定なら null
+  baselineAt: string | null;
   awaitingChannels: Array<{
     channelId: string;
     channelName: string;
@@ -66,11 +68,20 @@ export function buildGuildStatusReport(
 ): GuildStatusReport {
   const states = Object.values(state);
   const staleDays = guildConfig.replyMonitor?.staleNotifyDays ?? 0;
+  const baselineAt = guildConfig.replyMonitor?.baselineAt;
+
+  // 基準日時より前に終わっている会話は「不問」なので一覧自体に含めない
+  const isBeforeBaseline = (s: ChannelReplyState): boolean => {
+    if (!baselineAt || !s.latestMessageAt) return false;
+    const baseline = Date.parse(baselineAt);
+    const latest = Date.parse(s.latestMessageAt);
+    return !Number.isNaN(baseline) && !Number.isNaN(latest) && latest < baseline;
+  };
 
   // 「対応済み」チェックが付いたものも一覧には含め（フラグ付き）、
   // 画面側で絞り込み表示できるようにする。運営の ✅ 済みは従来どおり含めない
   const awaitingChannels = states
-    .filter((s) => s.awaitingReply && !s.hasStaffCheck)
+    .filter((s) => s.awaitingReply && !s.hasStaffCheck && !isBeforeBaseline(s))
     .sort((a, b) => (a.awaitingSince ?? "").localeCompare(b.awaitingSince ?? ""))
     .map((s) => ({
       channelId: s.channelId,
@@ -90,7 +101,7 @@ export function buildGuildStatusReport(
             (s) =>
               !s.lastError &&
               !s.pendingRescan &&
-              !isEffectivelyAwaiting(s) &&
+              !isEffectivelyAwaiting(s, baselineAt) &&
               s.lastHumanMessageAt !== undefined &&
               elapsedDays(s.lastHumanMessageAt, now) >= staleDays
           )
@@ -123,6 +134,7 @@ export function buildGuildStatusReport(
     totalWatchedChannels: states.length,
     pendingRescanCount: states.filter((s) => s.pendingRescan).length,
     staleNotifyDays: staleDays > 0 ? staleDays : null,
+    baselineAt: baselineAt ?? null,
     awaitingChannels,
     staleChannels,
     errorChannels,

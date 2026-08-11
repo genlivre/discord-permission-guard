@@ -68,6 +68,12 @@ export function validateConfig(config: GuildConfig[]): string | null {
       return `${guild.guildName}: 返信忘れ監視を有効にするには運営ロールを1つ以上設定してください`;
     }
     if (
+      rm.baselineAt !== undefined &&
+      Number.isNaN(Date.parse(rm.baselineAt))
+    ) {
+      return `基準日時が不正です: ${JSON.stringify(rm.baselineAt)}`;
+    }
+    if (
       rm.staleNotifyDays !== undefined &&
       (!Number.isInteger(rm.staleNotifyDays) ||
         rm.staleNotifyDays < 1 ||
