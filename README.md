@@ -177,6 +177,9 @@ npx wrangler secret put DISCORD_BOT_TOKEN
 ```
 
 未返信状況の閲覧は `/admin/reply-status`（Cloudflare Access 保護下）で行います。
+このページでは「対応済み」チェック（メンバー間で共有・新着メッセージで自動的に未対応へ戻る。
+チェック済みは朝サマリー/リマインドからも除外）、未チェックのみの絞り込み、
+チャンネルのワンクリック監視除外、Discord のメッセージ/チャンネルへのジャンプができます。
 
 ---
 
@@ -211,6 +214,8 @@ npx wrangler dev
 | `GET /run-reply?kind=morning` | ポーリング + 朝サマリー通知まで実行（`kind=reminder` で日中リマインド） |
 | `GET /admin/reply-status` | 未返信チェックページ（毎朝の定例での指差し確認用。/admin 同様 Cloudflare Access で保護） |
 | `GET /admin/api/reply-status-all` | 上記ページ用の全ギルド未返信状態 API |
+| `POST /admin/api/reply-check` | 「対応済み」チェックの付け外し（最新メッセージIDに紐づき、新着で自動失効） |
+| `POST /admin/api/reply-exclude` | チャンネルをワンクリックで監視対象外へ（除外リストに追加） |
 | `GET /admin` | 管理画面 |
 | `GET /admin/api/*` | 管理画面用 API |
 

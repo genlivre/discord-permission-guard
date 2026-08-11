@@ -2,6 +2,7 @@
 import { renderAdminPage } from "./html";
 import { renderReplyStatusPage } from "./replyStatusPage";
 import { buildAllGuildStatusReports } from "../replyMonitor/statusApi";
+import { saveGuildReplyState } from "../replyMonitor/state";
 import {
   getConfig,
   saveConfig,
@@ -57,6 +58,61 @@ export async function handleAdminRequest(
       return Response.json(report, {
         headers: { ...corsHeaders, "Cache-Control": "no-store" },
       });
+    }
+
+    // API: 「対応済み」チェックの付け外し
+    // チェックはその時点の最新メッセージIDに紐づき、新着メッセージで自動失効する
+    if (path === "/admin/api/reply-check" && request.method === "POST") {
+      const body = (await request.json()) as {
+        guildId?: string;
+        channelId?: string;
+        checked?: boolean;
+      };
+      if (!/^\d{17,20}$/.test(body.guildId ?? "") || !/^\d{17,20}$/.test(body.channelId ?? "")) {
+        return Response.json({ error: "invalid id" }, { status: 400, headers: corsHeaders });
+      }
+
+      const state = await loadGuildReplyState(env, body.guildId!);
+      const entry = state[body.channelId!];
+      if (!entry) {
+        return Response.json({ error: "channel state not found" }, { status: 404, headers: corsHeaders });
+      }
+
+      if (body.checked) {
+        entry.manualCheckMessageId = entry.latestMessageId ?? entry.lastObservedMessageId ?? undefined;
+      } else {
+        delete entry.manualCheckMessageId;
+      }
+      await saveGuildReplyState(env, body.guildId!, state);
+      return Response.json({ success: true }, { headers: corsHeaders });
+    }
+
+    // API: チャンネルを監視対象外にする（除外リストへ追加 + 状態を削除）
+    if (path === "/admin/api/reply-exclude" && request.method === "POST") {
+      const body = (await request.json()) as {
+        guildId?: string;
+        channelId?: string;
+      };
+      if (!/^\d{17,20}$/.test(body.guildId ?? "") || !/^\d{17,20}$/.test(body.channelId ?? "")) {
+        return Response.json({ error: "invalid id" }, { status: 400, headers: corsHeaders });
+      }
+
+      const config = await getConfig(env);
+      const guild = config.find((g) => g.guildId === body.guildId);
+      if (!guild?.replyMonitor) {
+        return Response.json({ error: "guild not found" }, { status: 404, headers: corsHeaders });
+      }
+      if (!guild.replyMonitor.excludedChannelIds.includes(body.channelId!)) {
+        guild.replyMonitor.excludedChannelIds.push(body.channelId!);
+        await saveConfig(env, config);
+      }
+
+      const state = await loadGuildReplyState(env, body.guildId!);
+      if (state[body.channelId!]) {
+        delete state[body.channelId!];
+        await saveGuildReplyState(env, body.guildId!, state);
+      }
+      return Response.json({ success: true }, { headers: corsHeaders });
     }
 
     // API: 設定取得

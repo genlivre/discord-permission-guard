@@ -125,6 +125,34 @@ describe("buildNotificationMessage", () => {
     expect(message).toContain("✅ 🙆 <:party_ok:123456789> リアクション");
   });
 
+  it("管理画面の「対応済み」チェックが付いたチャンネルは通知対象外", () => {
+    const checked = {
+      ...awaitingState,
+      latestMessageId: MESSAGE_ID,
+      manualCheckMessageId: MESSAGE_ID,
+    };
+    const message = buildNotificationMessage(
+      { guildConfig, state: { c1: checked } },
+      "reminder",
+      now
+    );
+    expect(message).toBeNull();
+  });
+
+  it("チェック後に新しいメッセージが来たら再びアラート対象になる", () => {
+    const reawakened = {
+      ...awaitingState,
+      latestMessageId: "9999999999999999999", // チェック時とは別のメッセージ
+      manualCheckMessageId: MESSAGE_ID,
+    };
+    const message = buildNotificationMessage(
+      { guildConfig, state: { c1: reawakened } },
+      "reminder",
+      now
+    );
+    expect(message).toContain("**1件**");
+  });
+
   it("運営の ✅ が付いたチャンネルは通知対象外", () => {
     const checked = { ...awaitingState, hasStaffCheck: true };
     const message = buildNotificationMessage(

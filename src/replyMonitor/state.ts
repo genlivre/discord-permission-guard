@@ -25,6 +25,11 @@ export interface ChannelReplyState {
   // 最新メッセージに運営の ✅ リアクションが付いているか（付いていればアラート対象外）
   hasStaffCheck: boolean;
 
+  // 管理画面（/admin/reply-status）で「対応済み」チェックを付けた時点の
+  // 最新メッセージID。latestMessageId と一致している間だけ有効で、
+  // 新しいメッセージが来る（IDが変わる）と自動的に未対応へ戻る
+  manualCheckMessageId?: string;
+
   // 直近のポーリングエラー（403 = Bot に閲覧権限がない 等）
   lastError?: string;
   lastErrorAt?: string; // ISO8601
@@ -73,9 +78,22 @@ export async function saveGuildReplyState(
 }
 
 /**
+ * 管理画面の「対応済み」チェックが現在も有効か
+ * （チェック後に新しいメッセージが来ていないか）。
+ */
+export function hasValidManualCheck(state: ChannelReplyState): boolean {
+  return (
+    state.manualCheckMessageId !== undefined &&
+    state.manualCheckMessageId === state.latestMessageId
+  );
+}
+
+/**
  * アラート対象（実効未返信）かどうか。
- * 未返信かつ、最新メッセージに運営の ✅ が付いていないもの。
+ * 未返信かつ、運営の ✅ も管理画面の「対応済み」チェックも付いていないもの。
  */
 export function isEffectivelyAwaiting(state: ChannelReplyState): boolean {
-  return state.awaitingReply && !state.hasStaffCheck;
+  return (
+    state.awaitingReply && !state.hasStaffCheck && !hasValidManualCheck(state)
+  );
 }
