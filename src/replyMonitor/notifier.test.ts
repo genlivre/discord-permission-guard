@@ -4,6 +4,7 @@ import type { GuildConfig } from "../config";
 import type { ChannelReplyState } from "./state";
 import {
   buildNotificationMessage,
+  elapsedDays,
   formatElapsed,
   jstDateString,
 } from "./notifier";
@@ -52,6 +53,11 @@ describe("formatElapsed / jstDateString", () => {
   it("JST の日付に変換する（UTC 15:00 以降は翌日になる）", () => {
     expect(jstDateString(new Date("2026-08-10T15:00:00.000Z"))).toBe("2026-08-11");
     expect(jstDateString(new Date("2026-08-10T14:59:00.000Z"))).toBe("2026-08-10");
+  });
+
+  it("elapsedDays は 24時間単位の切り捨て（ちょうどN日で対象、1ms手前は対象外）", () => {
+    expect(elapsedDays("2026-07-28T03:00:00.000Z", now)).toBe(14);
+    expect(elapsedDays("2026-07-28T03:00:00.001Z", now)).toBe(13);
   });
 });
 
@@ -189,6 +195,31 @@ describe("buildNotificationMessage", () => {
       );
       expect(message).toContain("返信待ちのチャンネルが");
       expect(message).not.toContain("しばらくやり取りのないチャンネル");
+    });
+
+    it("取得エラー中のチャンネルは疎遠一覧に載せない（古い時刻での誤検知防止）", () => {
+      const errored = {
+        ...staleState,
+        lastError: "Discord API error (messages): 403",
+      };
+      const message = buildNotificationMessage(
+        { guildConfig: staleConfig, state: { c1: errored } },
+        "morning",
+        now
+      );
+      expect(message).not.toContain("しばらくやり取りのないチャンネル");
+      expect(message).toContain("取得できないチャンネル");
+    });
+
+    it("バジェット持ち越し中のチャンネルは疎遠一覧から除外し、未完了を警告する", () => {
+      const pending = { ...staleState, pendingRescan: true };
+      const message = buildNotificationMessage(
+        { guildConfig: staleConfig, state: { c1: pending } },
+        "morning",
+        now
+      );
+      expect(message).not.toContain("しばらくやり取りのないチャンネル");
+      expect(message).toContain("疎遠チェックのデータ取得が未完了のチャンネルが 1 件");
     });
 
     it("staleNotifyDays 未設定なら疎遠一覧は出さない", () => {

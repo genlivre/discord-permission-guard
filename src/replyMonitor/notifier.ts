@@ -116,6 +116,23 @@ export function buildNotificationMessage(
     return truncateForDiscord(lines.join("\n"));
   }
 
+  // 取得エラーは最重要情報（サイレント監視漏れの兆候）のため、
+  // 末尾切り捨てで消えないよう一覧より先に配置する
+  if (errorList.length > 0) {
+    const listedErrors = errorList
+      .slice(0, MAX_LISTED_ERRORS)
+      .map((s) => `#${s.channelName}`)
+      .join(", ");
+    const moreErrors =
+      errorList.length > MAX_LISTED_ERRORS
+        ? ` ほか ${errorList.length - MAX_LISTED_ERRORS} 件`
+        : "";
+    lines.push(
+      `⚠️ 取得できないチャンネルが ${errorList.length} 件あります（Bot の閲覧権限を確認してください）: ${listedErrors}${moreErrors}`,
+      ""
+    );
+  }
+
   if (awaitingList.length === 0) {
     lines.push("✅ 未返信のチャンネルはありません。");
   } else {
@@ -138,20 +155,6 @@ export function buildNotificationMessage(
     if (awaitingList.length > MAX_LISTED_CHANNELS) {
       lines.push(`   …ほか ${awaitingList.length - MAX_LISTED_CHANNELS} 件`);
     }
-
-    const emojiLabels = resolveEmojisOf(
-      guildConfig.replyMonitor ?? {
-        enabled: false,
-        staffRoleIds: [],
-        excludedChannelIds: [],
-      }
-    )
-      .map(displayEmoji)
-      .join(" ");
-    lines.push("");
-    lines.push(
-      `> 対応不要な場合は、対象の最終メッセージに ${emojiLabels} リアクションを付けるとアラート対象外になります。`
-    );
   }
 
   // 疎遠アーティスト検知: staleNotifyDays 日以上「人間のやり取り」が無いチャンネル。
@@ -159,11 +162,15 @@ export function buildNotificationMessage(
   // 未返信として上に列挙済みのチャンネルは重複させない。
   const staleDays = guildConfig.replyMonitor?.staleNotifyDays ?? 0;
   if (kind === "morning" && staleDays > 0) {
+    // 取得エラー中（古い時刻のまま）と再取得持ち越し中のチャンネルは、
+    // 誤った疎遠通知を避けるため一覧から除外する
     const staleList = states
       .filter(
         (s) =>
+          !s.lastError &&
+          !s.pendingRescan &&
           !isEffectivelyAwaiting(s) &&
-          s.lastHumanMessageAt &&
+          s.lastHumanMessageAt !== undefined &&
           elapsedDays(s.lastHumanMessageAt, now) >= staleDays
       )
       .sort((a, b) =>
@@ -185,20 +192,32 @@ export function buildNotificationMessage(
         lines.push(`   …ほか ${staleList.length - MAX_LISTED_STALE} 件`);
       }
     }
+
+    // API バジェット持ち越しで未取得のチャンネルがある間は、
+    // 疎遠一覧が不完全であることを明示する
+    const pendingCount = states.filter((s) => s.pendingRescan).length;
+    if (pendingCount > 0) {
+      lines.push("");
+      lines.push(
+        `⚠️ 疎遠チェックのデータ取得が未完了のチャンネルが ${pendingCount} 件あります（次回以降の実行で自動的に処理されます）。`
+      );
+    }
   }
 
-  if (errorList.length > 0) {
-    const listedErrors = errorList
-      .slice(0, MAX_LISTED_ERRORS)
-      .map((s) => `#${s.channelName}`)
-      .join(", ");
-    const moreErrors =
-      errorList.length > MAX_LISTED_ERRORS
-        ? ` ほか ${errorList.length - MAX_LISTED_ERRORS} 件`
-        : "";
+  // 補助案内は最後（切り捨てられても実害が無い情報）
+  if (awaitingList.length > 0) {
+    const emojiLabels = resolveEmojisOf(
+      guildConfig.replyMonitor ?? {
+        enabled: false,
+        staffRoleIds: [],
+        excludedChannelIds: [],
+      }
+    )
+      .map(displayEmoji)
+      .join(" ");
     lines.push("");
     lines.push(
-      `⚠️ 取得できないチャンネルが ${errorList.length} 件あります（Bot の閲覧権限を確認してください）: ${listedErrors}${moreErrors}`
+      `> 対応不要な場合は、対象の最終メッセージに ${emojiLabels} リアクションを付けるとアラート対象外になります。`
     );
   }
 

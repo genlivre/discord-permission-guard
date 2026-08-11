@@ -33,6 +33,10 @@ export interface ChannelReplyState {
   // 設定変更後は last_message_id が動かなくても再判定させるために使う。
   configVersion?: string;
 
+  // API バジェット超過で今回の再判定（設定変更後の再取得含む）が持ち越された。
+  // 疎遠一覧の完全性が保証できないことを通知側で可視化するために使う
+  pendingRescan?: boolean;
+
   updatedAt: string; // ISO8601
 }
 

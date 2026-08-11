@@ -300,9 +300,10 @@ export function renderAdminPage(): string {
     }
 
     function updateStaleNotifyDays(idx, value) {
-      const days = parseInt(value, 10);
+      // parseInt だと "14abc" 等を受理してしまうため Number で厳密に解釈する
+      const days = Number(value);
       const rm = ensureReplyMonitor(config[idx]);
-      if (Number.isInteger(days) && days >= 1) {
+      if (value !== '' && Number.isInteger(days) && days >= 1 && days <= 365) {
         rm.staleNotifyDays = days;
       } else {
         delete rm.staleNotifyDays;

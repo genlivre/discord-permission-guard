@@ -235,9 +235,14 @@ async function pollGuild(
       const judgeable = filterJudgeable(messages);
       const historyComplete = messages.length < CHANNEL_FETCH_LIMIT;
 
-      // 疎遠検知用: 最後に観測した人間の発言時刻（見つからなければ前回値を維持）
+      // 疎遠検知用: 最後に観測した人間の発言時刻。
+      // 見つからなければ前回値を維持し、前回値より古い方向へは巻き戻さない
+      const fetchedHumanAt = judgeable[0]?.timestamp;
       const lastHumanMessageAt =
-        judgeable.length > 0 ? judgeable[0].timestamp : prev?.lastHumanMessageAt;
+        fetchedHumanAt &&
+        (!prev?.lastHumanMessageAt || fetchedHumanAt > prev.lastHumanMessageAt)
+          ? fetchedHumanAt
+          : prev?.lastHumanMessageAt;
 
       // 取得範囲に判定対象（人間の発言）が1件も無く、かつ履歴を遡り切れていない場合、
       // 「返信済み」とは確定できない。前回状態を維持し、未返信の見逃しを防ぐ。
@@ -316,9 +321,13 @@ async function pollGuild(
       }
     } catch (e) {
       if (e instanceof BudgetExhaustedError) {
-        // API バジェット超過: エラーではなく持ち越し。次回実行で処理される
+        // API バジェット超過: エラーではなく持ち越し。次回実行で処理される。
+        // 持ち越し中は疎遠一覧の完全性が保証できないためフラグで可視化する
         console.warn(`API budget exhausted, deferring channel ${ch.id} (${ch.name})`);
-        nextState[ch.id] = carryOver(prev, ch.id, ch.name);
+        nextState[ch.id] = {
+          ...carryOver(prev, ch.id, ch.name),
+          pendingRescan: true,
+        };
         continue;
       }
 
