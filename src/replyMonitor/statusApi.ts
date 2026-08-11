@@ -1,11 +1,8 @@
 // src/replyMonitor/statusApi.ts
 //
-// 未返信状態を外部（v-tamp の admin_menu バックエンド）へ提供する読み取り専用 API。
+// 未返信状態のレポート組み立てと、管理画面（/admin/reply-status、
+// Cloudflare Access 保護下）向けの読み取り API。
 // Discord API は呼ばず、KV に保存済みの状態だけを返す（高速・レート制限に無関係）。
-//
-// 認証: Authorization: Bearer <REPLY_STATUS_API_TOKEN>（Worker Secret）。
-// このエンドポイントはブラウザから直接叩く想定ではなく、サーバー間通信専用。
-// トークン未設定時はエンドポイント自体を無効（404 相当）にする。
 
 import type { GuildConfig } from "../config";
 import { elapsedDays } from "./notifier";
@@ -15,21 +12,6 @@ import {
   type ChannelReplyState,
   type StateKV,
 } from "./state";
-
-export interface StatusApiEnv extends StateKV {
-  REPLY_STATUS_API_TOKEN?: string;
-}
-
-/** タイミングセーフな文字列比較（トークン照合用） */
-export function timingSafeEqual(a: string, b: string): boolean {
-  const enc = new TextEncoder();
-  const ab = enc.encode(a);
-  const bb = enc.encode(b);
-  if (ab.length !== bb.length) return false;
-  let diff = 0;
-  for (let i = 0; i < ab.length; i++) diff |= ab[i] ^ bb[i];
-  return diff === 0;
-}
 
 function jumpUrl(guildId: string, s: ChannelReplyState): string {
   const messageId = s.awaitingSinceMessageId ?? s.latestMessageId ?? "";
@@ -132,25 +114,13 @@ export function buildGuildStatusReport(
 }
 
 /**
- * GET /api/reply-status のハンドラー。
+ * 全ギルド分の状態レポートを組み立てる（/admin/api/reply-status-all 用）。
+ * 認可は呼び出し元（/admin 配下 = Cloudflare Access）に委ねる。
  */
-export async function handleReplyStatusRequest(
-  request: Request,
-  env: StatusApiEnv,
+export async function buildAllGuildStatusReports(
+  env: StateKV,
   guilds: GuildConfig[]
-): Promise<Response> {
-  const token = env.REPLY_STATUS_API_TOKEN;
-  // トークン未設定 = 機能無効。存在を悟らせないため 404 を返す
-  if (!token) {
-    return new Response("Not Found", { status: 404 });
-  }
-
-  const auth = request.headers.get("Authorization") ?? "";
-  const provided = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  if (!timingSafeEqual(provided, token)) {
-    return new Response("Unauthorized", { status: 401 });
-  }
-
+): Promise<{ generatedAt: string; guilds: GuildStatusReport[] }> {
   const now = new Date();
   const reports: GuildStatusReport[] = [];
   for (const guildConfig of guilds) {
@@ -158,10 +128,5 @@ export async function handleReplyStatusRequest(
     const state = await loadGuildReplyState(env, guildConfig.guildId);
     reports.push(buildGuildStatusReport(guildConfig, state, now));
   }
-
-  return Response.json(
-    { generatedAt: now.toISOString(), guilds: reports },
-    // 管理データのためキャッシュさせない
-    { headers: { "Cache-Control": "no-store" } }
-  );
+  return { generatedAt: now.toISOString(), guilds: reports };
 }

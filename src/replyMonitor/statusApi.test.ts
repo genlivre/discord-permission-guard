@@ -2,11 +2,10 @@
 import { describe, expect, it } from "vitest";
 import type { GuildConfig } from "../config";
 import type { ChannelReplyState } from "./state";
+import type { StateKV } from "./state";
 import {
+  buildAllGuildStatusReports,
   buildGuildStatusReport,
-  handleReplyStatusRequest,
-  timingSafeEqual,
-  type StatusApiEnv,
 } from "./statusApi";
 
 const GUILD_ID = "1234567890123456789";
@@ -39,10 +38,9 @@ function state(overrides: Partial<ChannelReplyState>): ChannelReplyState {
   };
 }
 
-function makeEnv(token?: string, kvData: Record<string, string> = {}): StatusApiEnv {
+function makeEnv(kvData: Record<string, string> = {}): StateKV {
   const store = new Map(Object.entries(kvData));
   return {
-    REPLY_STATUS_API_TOKEN: token,
     CONFIG_KV: {
       get: async (key: string) => store.get(key) ?? null,
       put: async (key: string, value: string) => {
@@ -52,41 +50,9 @@ function makeEnv(token?: string, kvData: Record<string, string> = {}): StatusApi
   };
 }
 
-function req(auth?: string): Request {
-  return new Request("https://example.com/api/reply-status", {
-    headers: auth ? { Authorization: auth } : {},
-  });
-}
-
-describe("timingSafeEqual", () => {
-  it("一致・不一致・長さ違いを正しく判定する", () => {
-    expect(timingSafeEqual("secret", "secret")).toBe(true);
-    expect(timingSafeEqual("secret", "secreT")).toBe(false);
-    expect(timingSafeEqual("secret", "secret2")).toBe(false);
-    expect(timingSafeEqual("", "")).toBe(true);
-  });
-});
-
-describe("handleReplyStatusRequest", () => {
-  it("トークン未設定なら 404（機能無効）", async () => {
-    const res = await handleReplyStatusRequest(
-      req("Bearer x"),
-      makeEnv(undefined),
-      [guildConfig]
-    );
-    expect(res.status).toBe(404);
-  });
-
-  it("トークン不一致・ヘッダー無しは 401", async () => {
-    const env = makeEnv("correct-token");
-    expect((await handleReplyStatusRequest(req(), env, [guildConfig])).status).toBe(401);
-    expect(
-      (await handleReplyStatusRequest(req("Bearer wrong"), env, [guildConfig])).status
-    ).toBe(401);
-  });
-
-  it("正しいトークンなら状態レポートを返す（no-store付き）", async () => {
-    const kv = {
+describe("buildAllGuildStatusReports", () => {
+  it("返信監視が有効なギルドの状態を KV から集めて返す", async () => {
+    const env = makeEnv({
       [`reply_state:${GUILD_ID}`]: JSON.stringify({
         [CHANNEL_ID]: state({
           awaitingReply: true,
@@ -94,18 +60,21 @@ describe("handleReplyStatusRequest", () => {
           awaitingSinceMessageId: "m10",
         }),
       }),
+    });
+    const disabledGuild: GuildConfig = {
+      ...guildConfig,
+      guildId: "1111111111111111111",
+      replyMonitor: { enabled: false, staffRoleIds: [], excludedChannelIds: [] },
     };
-    const env = makeEnv("correct-token", kv);
-    const res = await handleReplyStatusRequest(
-      req("Bearer correct-token"),
-      env,
-      [guildConfig]
-    );
-    expect(res.status).toBe(200);
-    expect(res.headers.get("Cache-Control")).toBe("no-store");
-    const body = (await res.json()) as { guilds: Array<{ awaitingChannels: unknown[] }> };
-    expect(body.guilds).toHaveLength(1);
-    expect(body.guilds[0].awaitingChannels).toHaveLength(1);
+
+    const report = await buildAllGuildStatusReports(env, [
+      guildConfig,
+      disabledGuild,
+    ]);
+
+    expect(report.guilds).toHaveLength(1);
+    expect(report.guilds[0].awaitingChannels).toHaveLength(1);
+    expect(report.generatedAt).toBeTruthy();
   });
 });
 

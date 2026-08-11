@@ -103,6 +103,7 @@ export function renderAdminPage(): string {
 
     <div class="row" style="margin-bottom: 20px;">
       <button onclick="addGuild()" class="success">+ サーバーを追加</button>
+      <a href="/admin/reply-status" style="text-decoration: none;"><button class="secondary">未返信チェックを開く</button></a>
       <button onclick="saveAllConfig()" style="margin-left: auto;">設定を保存</button>
     </div>
 
