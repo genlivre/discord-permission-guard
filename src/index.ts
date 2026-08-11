@@ -79,8 +79,10 @@ export default {
     }
 
     // 返信監視の手動実行（動作確認用）
-    // /run-reply           : ポーリングのみ実行し、更新後の状態を JSON で返す
+    // /run-reply           : ポーリングのみ実行し、件数サマリーを JSON で返す
     // /run-reply?kind=morning|reminder : ポーリング + 通知送信まで実行
+    // 詳細な未返信状態は /admin/api/guilds/{id}/reply-status で確認する
+    // （/admin と同様、本番では Cloudflare Access での保護を前提とする）
     if (url.pathname === "/run-reply") {
       const kind = url.searchParams.get("kind");
       if (kind === "morning" || kind === "reminder") {
@@ -94,7 +96,13 @@ export default {
         results.map((r) => ({
           guildId: r.guildConfig.guildId,
           guildName: r.guildConfig.guildName,
-          channels: r.state,
+          error: r.error ?? null,
+          channelCount: Object.keys(r.state).length,
+          awaitingCount: Object.values(r.state).filter(
+            (s) => s.awaitingReply && !s.hasStaffCheck
+          ).length,
+          errorChannelCount: Object.values(r.state).filter((s) => s.lastError)
+            .length,
         }))
       );
     }

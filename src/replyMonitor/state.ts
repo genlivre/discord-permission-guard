@@ -25,6 +25,10 @@ export interface ChannelReplyState {
   lastError?: string;
   lastErrorAt?: string; // ISO8601
 
+  // 判定時の設定（運営ロール・対応済み絵文字）のバージョン。
+  // 設定変更後は last_message_id が動かなくても再判定させるために使う。
+  configVersion?: string;
+
   updatedAt: string; // ISO8601
 }
 

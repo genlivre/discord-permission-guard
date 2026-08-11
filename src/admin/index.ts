@@ -3,6 +3,7 @@ import { renderAdminPage } from "./html";
 import {
   getConfig,
   saveConfig,
+  validateConfig,
   fetchBotGuilds,
   fetchChannelsWithCategories,
   fetchRolesList,
@@ -49,6 +50,13 @@ export async function handleAdminRequest(
     // API: 設定保存
     if (path === "/admin/api/config" && request.method === "PUT") {
       const config = (await request.json()) as GuildConfig[];
+      const validationError = validateConfig(config);
+      if (validationError !== null) {
+        return Response.json(
+          { error: validationError },
+          { status: 400, headers: corsHeaders }
+        );
+      }
       await saveConfig(env, config);
       return Response.json({ success: true }, { headers: corsHeaders });
     }

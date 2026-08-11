@@ -34,13 +34,19 @@ async function discordFetch(
 
   let res = await doFetch();
 
-  // レートリミット (429) は Retry-After を尊重して1回だけリトライ
+  // レートリミット (429) は Retry-After を尊重して1回だけリトライ。
+  // 待機が10秒を超える指示の場合は Cron の実行時間を守るためリトライせず
+  // そのままエラーにする（該当チャンネルは次回実行で再試行される）。
   if (res.status === 429) {
     const retryAfter = Number(res.headers.get("Retry-After") ?? "1");
-    const waitMs = Math.min(Math.max(retryAfter, 0.5), 10) * 1000;
-    console.warn(`Rate limited on ${path}, retrying after ${waitMs}ms`);
-    await new Promise((resolve) => setTimeout(resolve, waitMs));
-    res = await doFetch();
+    if (retryAfter <= 10) {
+      const waitMs = Math.max(retryAfter, 0.5) * 1000;
+      console.warn(`Rate limited on ${path}, retrying after ${waitMs}ms`);
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+      res = await doFetch();
+    } else {
+      console.warn(`Rate limited on ${path}, Retry-After=${retryAfter}s — giving up`);
+    }
   }
 
   return res;

@@ -15,6 +15,12 @@ export type NotificationKind = "morning" | "reminder";
 // （ジャンプリンクが1件あたり約90文字あるため、余裕を持たせて 10 件に抑える）
 const MAX_LISTED_CHANNELS = 10;
 
+// 取得エラーのチャンネル名の最大表示件数
+const MAX_LISTED_ERRORS = 5;
+
+// Discord の content 上限（UTF-16 コード単位）
+const DISCORD_CONTENT_LIMIT = 2000;
+
 function jumpUrl(guildId: string, state: ChannelReplyState): string {
   const messageId = state.awaitingSinceMessageId ?? state.latestMessageId ?? "";
   return `https://discord.com/channels/${guildId}/${state.channelId}/${messageId}`;
@@ -70,7 +76,12 @@ export function buildNotificationMessage(
   const errorList = states.filter((s) => s.lastError);
 
   // リマインドは 0 件ならノイズを避けて投稿しない（エラーがある場合は投稿する）
-  if (kind === "reminder" && awaitingList.length === 0 && errorList.length === 0) {
+  if (
+    kind === "reminder" &&
+    awaitingList.length === 0 &&
+    errorList.length === 0 &&
+    !result.error
+  ) {
     return null;
   }
 
@@ -83,6 +94,16 @@ export function buildNotificationMessage(
     lines.push(`⏰ **未返信リマインド** — ${guildConfig.guildName}`);
   }
   lines.push("");
+
+  // ギルド単位でポーリング自体が失敗した場合は障害として必ず可視化する
+  // （「0件です」と誤読させない。監視が止まっている状態が最も危険）
+  if (result.error) {
+    lines.push(
+      "🚨 **未返信チェックの実行に失敗しました。** 監視が機能していない可能性があります。",
+      `エラー: ${result.error}`
+    );
+    return truncateForDiscord(lines.join("\n"));
+  }
 
   if (awaitingList.length === 0) {
     lines.push("✅ 未返信のチャンネルはありません。");
@@ -123,14 +144,30 @@ export function buildNotificationMessage(
   }
 
   if (errorList.length > 0) {
+    const listedErrors = errorList
+      .slice(0, MAX_LISTED_ERRORS)
+      .map((s) => `#${s.channelName}`)
+      .join(", ");
+    const moreErrors =
+      errorList.length > MAX_LISTED_ERRORS
+        ? ` ほか ${errorList.length - MAX_LISTED_ERRORS} 件`
+        : "";
     lines.push("");
     lines.push(
-      `⚠️ 取得できないチャンネルが ${errorList.length} 件あります（Bot の閲覧権限を確認してください）: ` +
-        errorList.map((s) => `#${s.channelName}`).join(", ")
+      `⚠️ 取得できないチャンネルが ${errorList.length} 件あります（Bot の閲覧権限を確認してください）: ${listedErrors}${moreErrors}`
     );
   }
 
-  return lines.join("\n");
+  return truncateForDiscord(lines.join("\n"));
+}
+
+/**
+ * Discord の content 上限（2000文字）に収める最終保証。
+ * 件数制限で通常は超えないが、長いチャンネル名等で超えた場合に切り詰める。
+ */
+function truncateForDiscord(message: string): string {
+  if (message.length <= DISCORD_CONTENT_LIMIT) return message;
+  return message.slice(0, DISCORD_CONTENT_LIMIT - 1) + "…";
 }
 
 /**
@@ -143,6 +180,7 @@ export async function runReplyNotification(
 ): Promise<void> {
   const results = await runReplyPoll(env, guilds);
   const now = new Date();
+  const sendFailures: string[] = [];
 
   for (const result of results) {
     const message = buildNotificationMessage(result, kind, now);
@@ -163,6 +201,15 @@ export async function runReplyNotification(
         `Failed to send ${kind} notification for ${result.guildConfig.guildName}`,
         e
       );
+      sendFailures.push(`${result.guildConfig.guildName}: ${String(e)}`);
     }
+  }
+
+  // Webhook 送信失敗を握りつぶすと Cron が成功扱いになり障害に気づけないため、
+  // 最後に集約して例外にする（Cloudflare 側で実行失敗として観測できる）
+  if (sendFailures.length > 0) {
+    throw new Error(
+      `Failed to send ${kind} notification(s): ${sendFailures.join(" / ")}`
+    );
   }
 }

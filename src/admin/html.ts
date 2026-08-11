@@ -530,7 +530,8 @@ export function renderAdminPage(): string {
         if (res.ok) {
           showStatus('設定を保存しました', 'success');
         } else {
-          throw new Error('保存に失敗しました');
+          const data = await res.json().catch(() => null);
+          throw new Error((data && data.error) || '保存に失敗しました');
         }
       } catch (e) {
         showStatus('保存に失敗しました: ' + e.message, 'error');

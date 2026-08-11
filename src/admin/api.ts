@@ -29,6 +29,63 @@ export async function getConfig(env: AdminEnv): Promise<GuildConfig[]> {
   return [];
 }
 
+// Discord snowflake ID の形式
+const SNOWFLAKE = /^\d{17,20}$/;
+// カスタム絵文字設定の形式（名前:ID）
+const CUSTOM_EMOJI = /^[A-Za-z0-9_]{2,32}:\d{17,20}$/;
+
+/**
+ * 保存前の設定バリデーション。
+ * ID 値は管理画面の HTML/inline handler へ埋め込まれるため、
+ * snowflake 形式を強制することで stored XSS の入口を塞ぐ。
+ * 問題があればエラーメッセージ、無ければ null を返す。
+ */
+export function validateConfig(config: GuildConfig[]): string | null {
+  for (const guild of config) {
+    if (!SNOWFLAKE.test(guild.guildId)) {
+      return `不正なギルドID: ${JSON.stringify(guild.guildId)}`;
+    }
+    for (const id of guild.whitelistChannelIds ?? []) {
+      if (!SNOWFLAKE.test(id)) {
+        return `不正なチャンネルID (whitelist): ${JSON.stringify(id)}`;
+      }
+    }
+
+    const rm = guild.replyMonitor;
+    if (!rm) continue;
+
+    for (const id of rm.staffRoleIds ?? []) {
+      if (!SNOWFLAKE.test(id)) {
+        return `不正なロールID: ${JSON.stringify(id)}`;
+      }
+    }
+    for (const id of rm.excludedChannelIds ?? []) {
+      if (!SNOWFLAKE.test(id)) {
+        return `不正なチャンネルID (除外): ${JSON.stringify(id)}`;
+      }
+    }
+    if (rm.enabled && (rm.staffRoleIds ?? []).length === 0) {
+      return `${guild.guildName}: 返信忘れ監視を有効にするには運営ロールを1つ以上設定してください`;
+    }
+    const emojis = rm.resolveReactionEmojis ?? [];
+    if (emojis.length > 10) {
+      return "対応済みリアクションは10個までにしてください";
+    }
+    for (const emoji of emojis) {
+      const trimmed = emoji.trim();
+      if (trimmed.length === 0) continue;
+      if (trimmed.includes(":")) {
+        if (!CUSTOM_EMOJI.test(trimmed)) {
+          return `不正なカスタム絵文字形式（名前:ID で指定）: ${JSON.stringify(trimmed)}`;
+        }
+      } else if (trimmed.length > 16 || /[<>"'&\\]/.test(trimmed)) {
+        return `不正な絵文字設定: ${JSON.stringify(trimmed)}`;
+      }
+    }
+  }
+  return null;
+}
+
 /**
  * KVに設定を保存
  */
