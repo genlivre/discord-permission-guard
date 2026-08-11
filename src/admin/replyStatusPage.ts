@@ -74,6 +74,18 @@ export function renderReplyStatusPage(): string {
       border-radius: 6px; padding: 8px 12px; font-size: 12px; margin-top: 10px;
     }
     .loading { text-align: center; padding: 40px; color: #72767d; }
+    details.help {
+      background: #23233a; border: 1px solid #40444b; border-radius: 6px;
+      padding: 10px 14px; margin-bottom: 16px; font-size: 13px;
+    }
+    details.help summary { cursor: pointer; color: #99aab5; user-select: none; }
+    details.help summary:hover { color: #fff; }
+    .help-table { margin-top: 10px; }
+    .help-table th {
+      white-space: nowrap; vertical-align: top; color: #dcddde;
+      font-size: 13px; padding: 8px 14px 8px 0; border-bottom: 1px solid #33334d;
+    }
+    .help-table td { color: #b9bbbe; line-height: 1.7; }
     .status.error { background: #4a2d2d; color: #ed4245; padding: 10px; border-radius: 4px; margin: 10px 0; }
   </style>
 </head>
@@ -89,10 +101,41 @@ export function renderReplyStatusPage(): string {
     </div>
     <p class="sub">
       「最新の発言が運営以外のまま」のチャンネル一覧です。
-      チェック＝対応した ／ 不問＝対応不要のまま放置でOK（どちらも新しいメッセージが来ると自動で通知対象に戻ります）。
-      Discord 側で最終メッセージに ✅ を付けても外れます。
       <span id="generated-at"></span>
     </p>
+
+    <details class="help">
+      <summary>各ボタンの説明（クリックで開閉）</summary>
+      <table class="help-table">
+        <tr>
+          <th>☑ チェック</th>
+          <td><b>対応した</b>ときに付けます。一覧には「チェック済み」として残り（「未チェックのみ表示」で非表示）、
+              朝サマリー・リマインドの通知対象から外れます。
+              <b>新しいメッセージが来ると自動でチェックが外れて</b>再び通知されます。</td>
+        </tr>
+        <tr>
+          <th>不問にする</th>
+          <td><b>返信不要のまま置いておいてOK</b>な会話に使います（古い自然終了の会話、退職した元担当者で終わっている会話など）。
+              一覧と通知から完全に外れ、下の「🔕 不問中のチャンネル」に移動します。
+              <b>新しいメッセージが来ると自動で通知対象に復活</b>します。誤操作は「解除」で戻せます。</td>
+        </tr>
+        <tr>
+          <th>対象外にする</th>
+          <td><b>このチャンネルの監視自体をやめます</b>（アーティスト個別ではないチャンネル向け。雑談・Botログなど）。
+              <b>新しいメッセージが来ても通知されません。</b>
+              戻すには <a href="/admin" style="color:#7289da;">設定画面</a> の「監視除外チャンネル」から削除してください。</td>
+        </tr>
+        <tr>
+          <th>✅（Discord側）</th>
+          <td>運営ロールを持つメンバーが Discord 上で最終メッセージに対応済みリアクション（✅ 等、設定で変更可）を
+              付けた場合も、チェックと同様に通知対象から外れます。</td>
+        </tr>
+        <tr>
+          <th>使い分けの目安</th>
+          <td>返信した → <b>チェック</b> ／ 返信不要だが監視は続けたい → <b>不問</b> ／ そもそも監視不要 → <b>対象外</b></td>
+        </tr>
+      </table>
+    </details>
     <div style="margin-bottom: 14px;">
       <label style="font-size: 13px; color: #b9bbbe; display: inline-flex; align-items: center; gap: 6px; cursor: pointer;">
         <input type="checkbox" id="filter-unchecked" checked onchange="renderAll()">
