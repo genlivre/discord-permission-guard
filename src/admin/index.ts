@@ -9,6 +9,7 @@ import {
   type AdminEnv,
 } from "./api";
 import type { GuildConfig } from "../config";
+import { loadGuildReplyState } from "../replyMonitor/state";
 
 /**
  * /admin 配下のリクエストをハンドル
@@ -72,6 +73,16 @@ export async function handleAdminRequest(
       const guildId = rolesMatch[1];
       const roles = await fetchRolesList(env, guildId);
       return Response.json(roles, { headers: corsHeaders });
+    }
+
+    // API: ギルドの未返信状態（返信忘れ監視の現況確認用）
+    const replyStateMatch = path.match(
+      /^\/admin\/api\/guilds\/(\d+)\/reply-status$/
+    );
+    if (replyStateMatch && request.method === "GET") {
+      const guildId = replyStateMatch[1];
+      const state = await loadGuildReplyState(env, guildId);
+      return Response.json(state, { headers: corsHeaders });
     }
 
     return new Response("Not Found", { status: 404 });

@@ -1,5 +1,17 @@
 // src/config.ts
 
+export interface ReplyMonitorConfig {
+  // 返信忘れ監視を有効にするか
+  enabled: boolean;
+
+  // 「運営メンバー」とみなすロールID。
+  // このロールを持たないユーザーの発言が最新のまま放置されると未返信扱いになる。
+  staffRoleIds: string[];
+
+  // 返信監視の対象外にするチャンネルID（運営内部チャンネルなど）
+  excludedChannelIds: string[];
+}
+
 export interface GuildConfig {
   // 監視対象のサーバー（ギルド）
   guildId: string;
@@ -10,6 +22,9 @@ export interface GuildConfig {
 
   // このサーバー内で「公開OK」とみなすチャンネルID
   whitelistChannelIds: string[];
+
+  // 返信忘れ監視の設定（未設定なら監視しない）
+  replyMonitor?: ReplyMonitorConfig;
 }
 
 /**

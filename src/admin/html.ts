@@ -141,8 +141,12 @@ export function renderAdminPage(): string {
       if (nameCache[guildId]) return;
 
       try {
-        const channelsRes = await fetch(\`/admin/api/guilds/\${guildId}/channels\`);
+        const [channelsRes, rolesRes] = await Promise.all([
+          fetch(\`/admin/api/guilds/\${guildId}/channels\`),
+          fetch(\`/admin/api/guilds/\${guildId}/roles\`)
+        ]);
         const channelsData = await channelsRes.json();
+        const rolesData = await rolesRes.json();
 
         const channels = {};
         // カテゴリ内のチャンネル
@@ -156,10 +160,15 @@ export function renderAdminPage(): string {
           channels[ch.id] = ch.name;
         });
 
-        nameCache[guildId] = { channels };
+        const roles = {};
+        rolesData.forEach(r => {
+          roles[r.id] = r.name;
+        });
+
+        nameCache[guildId] = { channels, roles };
       } catch (e) {
         console.error('Failed to load cache for guild', guildId, e);
-        nameCache[guildId] = { channels: {} };
+        nameCache[guildId] = { channels: {}, roles: {} };
       }
     }
 
@@ -171,6 +180,38 @@ export function renderAdminPage(): string {
       return \`#\${channelId}\`;
     }
 
+    function getRoleName(guildId, roleId) {
+      const cache = nameCache[guildId];
+      if (cache && cache.roles && cache.roles[roleId]) {
+        return \`@\${cache.roles[roleId]} (\${roleId})\`;
+      }
+      return \`@\${roleId}\`;
+    }
+
+    // 返信監視設定が未初期化のギルドにデフォルト値を入れる
+    function ensureReplyMonitor(guild) {
+      if (!guild.replyMonitor) {
+        guild.replyMonitor = { enabled: false, staffRoleIds: [], excludedChannelIds: [] };
+      }
+      return guild.replyMonitor;
+    }
+
+    // 'rm.' プレフィックス付きフィールドは replyMonitor 配下のリストを指す
+    function getList(guild, field) {
+      if (field.startsWith('rm.')) {
+        return ensureReplyMonitor(guild)[field.slice(3)];
+      }
+      return guild[field];
+    }
+
+    function setList(guild, field, ids) {
+      if (field.startsWith('rm.')) {
+        ensureReplyMonitor(guild)[field.slice(3)] = ids;
+      } else {
+        guild[field] = ids;
+      }
+    }
+
     function renderGuilds() {
       const container = document.getElementById('guilds-container');
       if (config.length === 0) {
@@ -178,7 +219,9 @@ export function renderAdminPage(): string {
         return;
       }
 
-      container.innerHTML = config.map((guild, idx) => \`
+      container.innerHTML = config.map((guild, idx) => {
+        const rm = ensureReplyMonitor(guild);
+        return \`
         <div class="card" data-index="\${idx}">
           <div class="card-header">
             <div>
@@ -205,8 +248,131 @@ export function renderAdminPage(): string {
               <button class="secondary" onclick="openChannelSelector(\${idx}, 'whitelistChannelIds')">チャンネルを追加</button>
             </div>
           </div>
+
+          <div class="section">
+            <div class="section-title">
+              <span class="toggle-section" onclick="toggleSection(this)">▼ 返信忘れ監視\${rm.enabled ? '（有効）' : '（無効）'}</span>
+            </div>
+            <div class="collapsible">
+              <label class="checkbox-item" style="padding-left: 0;">
+                <input type="checkbox" \${rm.enabled ? 'checked' : ''}
+                       onchange="updateReplyMonitorEnabled(\${idx}, this.checked)">
+                未返信チャンネルの監視・通知を有効にする
+              </label>
+
+              <div class="section-title" style="margin-top: 8px;">運営ロール（このロールを持つメンバーの発言を「返信」とみなす）</div>
+              <div class="tag-list">
+                \${rm.staffRoleIds.map(id => \`<span class="tag">\${escapeHtml(getRoleName(guild.guildId, id))}<span class="remove" onclick="removeFromList(\${idx}, 'rm.staffRoleIds', '\${id}')">&times;</span></span>\`).join('')}
+              </div>
+              <button class="secondary" onclick="openRoleSelector(\${idx})">ロールを選択</button>
+
+              <div class="section-title" style="margin-top: 12px;">監視除外チャンネル（運営内部チャンネルなど） (\${rm.excludedChannelIds.length}件)</div>
+              <div class="tag-list">
+                \${rm.excludedChannelIds.map(id => \`<span class="tag">\${escapeHtml(getChannelName(guild.guildId, id))}<span class="remove" onclick="removeFromList(\${idx}, 'rm.excludedChannelIds', '\${id}')">&times;</span></span>\`).join('')}
+              </div>
+              <button class="secondary" onclick="openChannelSelector(\${idx}, 'rm.excludedChannelIds')">チャンネルを追加</button>
+
+              <div style="margin-top: 12px;">
+                <button class="secondary" onclick="showReplyStatus(\${idx})">未返信状況を表示</button>
+              </div>
+            </div>
+          </div>
         </div>
-      \`).join('');
+      \`;}).join('');
+    }
+
+    function updateReplyMonitorEnabled(idx, enabled) {
+      ensureReplyMonitor(config[idx]).enabled = enabled;
+      renderGuilds();
+    }
+
+    async function openRoleSelector(idx) {
+      const guild = config[idx];
+      const rm = ensureReplyMonitor(guild);
+      const modal = document.getElementById('modal-container');
+      modal.innerHTML = '<div class="modal-overlay"><div class="modal"><div class="loading">ロールを読み込み中...</div></div></div>';
+
+      try {
+        const res = await fetch(\`/admin/api/guilds/\${guild.guildId}/roles\`);
+        const roles = await res.json();
+
+        modal.innerHTML = \`
+          <div class="modal-overlay" onclick="closeModal(event)">
+            <div class="modal" onclick="event.stopPropagation()">
+              <h3>運営ロールを選択</h3>
+              <div class="checkbox-list">
+                \${roles.map(r => \`
+                  <label class="checkbox-item">
+                    <input type="checkbox" value="\${r.id}" \${rm.staffRoleIds.includes(r.id) ? 'checked' : ''}>
+                    @\${escapeHtml(r.name)} <span style="color:#72767d;font-size:11px">(\${r.id})</span>
+                  </label>
+                \`).join('')}
+              </div>
+              <div class="row" style="margin-top: 15px;">
+                <button onclick="confirmRoleSelection(\${idx})">適用</button>
+                <button class="secondary" onclick="closeModal()">キャンセル</button>
+              </div>
+            </div>
+          </div>
+        \`;
+      } catch (e) {
+        modal.innerHTML = '';
+        showStatus('ロールの取得に失敗しました: ' + e.message, 'error');
+      }
+    }
+
+    async function showReplyStatus(idx) {
+      const guild = config[idx];
+      const modal = document.getElementById('modal-container');
+      modal.innerHTML = '<div class="modal-overlay"><div class="modal"><div class="loading">未返信状況を読み込み中...</div></div></div>';
+
+      try {
+        const res = await fetch(\`/admin/api/guilds/\${guild.guildId}/reply-status\`);
+        const state = await res.json();
+
+        const entries = Object.values(state);
+        const awaiting = entries.filter(s => s.awaitingReply && !s.hasStaffCheck)
+          .sort((a, b) => (a.awaitingSince || '').localeCompare(b.awaitingSince || ''));
+        const errors = entries.filter(s => s.lastError);
+
+        const awaitingHtml = awaiting.length === 0
+          ? '<p>未返信のチャンネルはありません。</p>'
+          : awaiting.map(s => \`
+              <div class="checkbox-item">
+                <a href="https://discord.com/channels/\${guild.guildId}/\${s.channelId}/\${s.awaitingSinceMessageId || ''}"
+                   target="_blank" rel="noopener" style="color:#7289da;">#\${escapeHtml(s.channelName)}</a>
+                <span style="color:#72767d;font-size:12px;">\${s.awaitingSince ? new Date(s.awaitingSince).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }) + ' から' : ''}</span>
+              </div>
+            \`).join('');
+
+        const errorHtml = errors.length === 0 ? '' : \`
+          <div class="category-name" style="color:#ed4245;">取得できないチャンネル（権限を確認してください）</div>
+          \${errors.map(s => \`<div class="checkbox-item">#\${escapeHtml(s.channelName)} <span style="color:#72767d;font-size:11px;">\${escapeHtml(s.lastError || '')}</span></div>\`).join('')}
+        \`;
+
+        modal.innerHTML = \`
+          <div class="modal-overlay" onclick="closeModal(event)">
+            <div class="modal" onclick="event.stopPropagation()">
+              <h3>未返信状況 — \${escapeHtml(guild.guildName)}（\${awaiting.length}件）</h3>
+              <div class="checkbox-list">\${awaitingHtml}\${errorHtml}</div>
+              <div class="row" style="margin-top: 15px;">
+                <button class="secondary" onclick="closeModal()">閉じる</button>
+              </div>
+            </div>
+          </div>
+        \`;
+      } catch (e) {
+        modal.innerHTML = '';
+        showStatus('未返信状況の取得に失敗しました: ' + e.message, 'error');
+      }
+    }
+
+    function confirmRoleSelection(idx) {
+      const checkboxes = document.querySelectorAll('.checkbox-list input[type="checkbox"]:checked');
+      const ids = Array.from(checkboxes).map(cb => cb.value);
+      ensureReplyMonitor(config[idx]).staffRoleIds = ids;
+      closeModal();
+      renderGuilds();
     }
 
     function toggleSection(el) {
@@ -222,7 +388,8 @@ export function renderAdminPage(): string {
     }
 
     function removeFromList(idx, field, value) {
-      config[idx][field] = config[idx][field].filter(v => v !== value);
+      const current = getList(config[idx], field);
+      setList(config[idx], field, current.filter(v => v !== value));
       renderGuilds();
     }
 
@@ -268,7 +435,8 @@ export function renderAdminPage(): string {
         guildId: guildId,
         guildName: guild.name,
         alertWebhookUrl: webhookUrl,
-        whitelistChannelIds: []
+        whitelistChannelIds: [],
+        replyMonitor: { enabled: false, staffRoleIds: [], excludedChannelIds: [] }
       });
       closeModal();
       // 新しいギルドのキャッシュをロード
@@ -285,7 +453,7 @@ export function renderAdminPage(): string {
         const res = await fetch(\`/admin/api/guilds/\${guild.guildId}/channels\`);
         const data = await res.json();
 
-        const currentIds = guild[field];
+        const currentIds = getList(guild, field);
 
         modal.innerHTML = \`
           <div class="modal-overlay" onclick="closeModal(event)">
@@ -327,7 +495,7 @@ export function renderAdminPage(): string {
     function confirmChannelSelection(idx, field) {
       const checkboxes = document.querySelectorAll('.checkbox-list input[type="checkbox"]:checked');
       const ids = Array.from(checkboxes).map(cb => cb.value);
-      config[idx][field] = ids;
+      setList(config[idx], field, ids);
       closeModal();
       renderGuilds();
     }
