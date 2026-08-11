@@ -8,19 +8,15 @@
 // メッセージを取得する。
 
 import type { Env } from "../discord";
-import type { GuildConfig } from "../config";
+import { resolveEmojisOf, type GuildConfig } from "../config";
 import {
   fetchChannelMessages,
   fetchGuildChannels,
   fetchGuildMember,
   fetchReactionUsers,
 } from "../discord";
-import {
-  CHECK_EMOJI,
-  filterJudgeable,
-  hasCheckReaction,
-  judgeChannel,
-} from "./judge";
+import { filterJudgeable, judgeChannel, matchedResolveEmojis } from "./judge";
+import type { DiscordMessage } from "../types";
 import {
   loadGuildReplyState,
   saveGuildReplyState,
@@ -80,21 +76,22 @@ class StaffChecker {
 }
 
 /**
- * 最新メッセージに「運営が付けた ✅」があるかを確認する。
- * reactions フィールドに ✅ が無ければ API を呼ばずに false。
+ * 最新メッセージに「運営が付けた対応済みリアクション（✅ 等）」があるかを確認する。
+ * reactions フィールドに対象絵文字が無ければ API を呼ばずに false。
  */
 async function hasStaffCheckReaction(
   env: PollEnv,
   channelId: string,
-  message: Parameters<typeof hasCheckReaction>[0],
+  message: DiscordMessage,
+  resolveEmojis: string[],
   staffChecker: StaffChecker
 ): Promise<boolean> {
-  if (!hasCheckReaction(message)) return false;
-
-  const users = await fetchReactionUsers(env, channelId, message.id, CHECK_EMOJI);
-  for (const user of users) {
-    if (user.bot) continue;
-    if (await staffChecker.isStaff(user.id)) return true;
+  for (const emoji of matchedResolveEmojis(message, resolveEmojis)) {
+    const users = await fetchReactionUsers(env, channelId, message.id, emoji);
+    for (const user of users) {
+      if (user.bot) continue;
+      if (await staffChecker.isStaff(user.id)) return true;
+    }
   }
   return false;
 }
@@ -113,6 +110,7 @@ async function pollGuild(
 ): Promise<GuildPollResult> {
   const { guildId } = guildConfig;
   const monitor = guildConfig.replyMonitor!;
+  const resolveEmojis = resolveEmojisOf(monitor);
   const staffChecker = new StaffChecker(env, guildId, monitor.staffRoleIds);
 
   const channels = await fetchGuildChannels(env, guildId);
@@ -161,6 +159,7 @@ async function pollGuild(
           env,
           ch.id,
           result.latestMessage,
+          resolveEmojis,
           staffChecker
         );
 

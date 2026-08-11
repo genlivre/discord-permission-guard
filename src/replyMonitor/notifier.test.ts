@@ -101,6 +101,24 @@ describe("buildNotificationMessage", () => {
     expect(message).toContain("（前日から持ち越し）");
   });
 
+  it("案内文には設定した対応済みリアクションを表示する（カスタム絵文字は描画形式）", () => {
+    const withEmojis: GuildConfig = {
+      ...guildConfig,
+      replyMonitor: {
+        enabled: true,
+        staffRoleIds: ["r1"],
+        excludedChannelIds: [],
+        resolveReactionEmojis: ["✅", "🙆", "party_ok:123456789"],
+      },
+    };
+    const message = buildNotificationMessage(
+      { guildConfig: withEmojis, state: { c1: awaitingState } },
+      "morning",
+      now
+    );
+    expect(message).toContain("✅ 🙆 <:party_ok:123456789> リアクション");
+  });
+
   it("運営の ✅ が付いたチャンネルは通知対象外", () => {
     const checked = { ...awaitingState, hasStaffCheck: true };
     const message = buildNotificationMessage(

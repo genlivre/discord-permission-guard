@@ -10,6 +10,24 @@ export interface ReplyMonitorConfig {
 
   // 返信監視の対象外にするチャンネルID（運営内部チャンネルなど）
   excludedChannelIds: string[];
+
+  // 運営が最終メッセージに付けると「対応済み」とみなすリアクション。
+  // 標準絵文字は絵文字そのもの（例: "✅"）、カスタム絵文字は "名前:ID" 形式。
+  // 未設定・空の場合は ✅ のみが対象（後方互換）。
+  resolveReactionEmojis?: string[];
+}
+
+// resolveReactionEmojis 未設定時のデフォルト
+export const DEFAULT_RESOLVE_EMOJIS = ["✅"];
+
+/**
+ * 設定から「対応済み」リアクションの一覧を取得（未設定なら ✅ のみ）
+ */
+export function resolveEmojisOf(monitor: ReplyMonitorConfig): string[] {
+  const emojis = (monitor.resolveReactionEmojis ?? [])
+    .map((e) => e.trim())
+    .filter((e) => e.length > 0);
+  return emojis.length > 0 ? emojis : DEFAULT_RESOLVE_EMOJIS;
 }
 
 export interface GuildConfig {

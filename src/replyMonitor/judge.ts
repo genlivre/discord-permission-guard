@@ -3,10 +3,7 @@
 // 未返信判定の純粋ロジック。
 // Discord API に依存しない形に分離してテスト可能にしている。
 
-import type { DiscordMessage } from "../types";
-
-// ✅（返信不要の明示マーク）として扱う絵文字
-export const CHECK_EMOJI = "✅"; // ✅ WHITE HEAVY CHECK MARK
+import type { DiscordMessage, DiscordReaction } from "../types";
 
 // 判定対象にするメッセージタイプ
 // 0: DEFAULT（通常メッセージ）, 19: REPLY（返信）
@@ -23,11 +20,32 @@ export function filterJudgeable(messages: DiscordMessage[]): DiscordMessage[] {
 }
 
 /**
- * メッセージに ✅ リアクションが付いているか（誰が付けたかは見ない）。
+ * リアクションが設定された「対応済み」絵文字に一致するか。
+ * - 標準絵文字: 設定値は絵文字そのもの（例: "✅"）→ emoji.id が null で name が一致
+ * - カスタム絵文字: 設定値は "名前:ID" 形式 → emoji.id が ID 部分と一致
  */
-export function hasCheckReaction(message: DiscordMessage): boolean {
-  return (message.reactions ?? []).some(
-    (r) => r.emoji.id === null && r.emoji.name === CHECK_EMOJI
+export function reactionMatchesEmoji(
+  reaction: DiscordReaction,
+  emoji: string
+): boolean {
+  const colonIndex = emoji.lastIndexOf(":");
+  if (colonIndex >= 0) {
+    return reaction.emoji.id === emoji.slice(colonIndex + 1);
+  }
+  return reaction.emoji.id === null && reaction.emoji.name === emoji;
+}
+
+/**
+ * メッセージに付いているリアクションのうち、
+ * 「対応済み」絵文字に一致するものを返す（誰が付けたかは見ない）。
+ */
+export function matchedResolveEmojis(
+  message: DiscordMessage,
+  resolveEmojis: string[]
+): string[] {
+  const reactions = message.reactions ?? [];
+  return resolveEmojis.filter((emoji) =>
+    reactions.some((r) => reactionMatchesEmoji(r, emoji))
   );
 }
 

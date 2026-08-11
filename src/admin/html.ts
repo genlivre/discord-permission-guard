@@ -191,7 +191,10 @@ export function renderAdminPage(): string {
     // 返信監視設定が未初期化のギルドにデフォルト値を入れる
     function ensureReplyMonitor(guild) {
       if (!guild.replyMonitor) {
-        guild.replyMonitor = { enabled: false, staffRoleIds: [], excludedChannelIds: [] };
+        guild.replyMonitor = { enabled: false, staffRoleIds: [], excludedChannelIds: [], resolveReactionEmojis: ['✅'] };
+      }
+      if (!guild.replyMonitor.resolveReactionEmojis) {
+        guild.replyMonitor.resolveReactionEmojis = ['✅'];
       }
       return guild.replyMonitor;
     }
@@ -266,6 +269,11 @@ export function renderAdminPage(): string {
               </div>
               <button class="secondary" onclick="openRoleSelector(\${idx})">ロールを選択</button>
 
+              <div class="section-title" style="margin-top: 12px;">対応済みリアクション（運営がこれを最終メッセージに付けるとアラート対象外。カンマ区切り、カスタム絵文字は 名前:ID）</div>
+              <input type="text" value="\${escapeHtml(rm.resolveReactionEmojis.join(', '))}"
+                     placeholder="✅, 🙆, party_parrot:123456789012345678"
+                     onchange="updateResolveEmojis(\${idx}, this.value)">
+
               <div class="section-title" style="margin-top: 12px;">監視除外チャンネル（運営内部チャンネルなど） (\${rm.excludedChannelIds.length}件)</div>
               <div class="tag-list">
                 \${rm.excludedChannelIds.map(id => \`<span class="tag">\${escapeHtml(getChannelName(guild.guildId, id))}<span class="remove" onclick="removeFromList(\${idx}, 'rm.excludedChannelIds', '\${id}')">&times;</span></span>\`).join('')}
@@ -283,6 +291,12 @@ export function renderAdminPage(): string {
 
     function updateReplyMonitorEnabled(idx, enabled) {
       ensureReplyMonitor(config[idx]).enabled = enabled;
+      renderGuilds();
+    }
+
+    function updateResolveEmojis(idx, value) {
+      const emojis = value.split(',').map(s => s.trim()).filter(s => s.length > 0);
+      ensureReplyMonitor(config[idx]).resolveReactionEmojis = emojis.length > 0 ? emojis : ['✅'];
       renderGuilds();
     }
 
@@ -436,7 +450,7 @@ export function renderAdminPage(): string {
         guildName: guild.name,
         alertWebhookUrl: webhookUrl,
         whitelistChannelIds: [],
-        replyMonitor: { enabled: false, staffRoleIds: [], excludedChannelIds: [] }
+        replyMonitor: { enabled: false, staffRoleIds: [], excludedChannelIds: [], resolveReactionEmojis: ['✅'] }
       });
       closeModal();
       // 新しいギルドのキャッシュをロード

@@ -4,7 +4,7 @@
 // 通知前にポーリングを同期実行して鮮度を確保してから、
 // 各ギルドの alertWebhookUrl（管理サーバー側）へ送信する。
 
-import type { GuildConfig } from "../config";
+import { resolveEmojisOf, type GuildConfig } from "../config";
 import { sendWebhook } from "../webhook";
 import { runReplyPoll, type GuildPollResult, type PollEnv } from "./poller";
 import { isEffectivelyAwaiting, type ChannelReplyState } from "./state";
@@ -42,6 +42,14 @@ export function jstDateString(date: Date): string {
     month: "2-digit",
     day: "2-digit",
   }).format(date);
+}
+
+/**
+ * 通知文中での絵文字表示。カスタム絵文字（"名前:ID"）は Discord 上で
+ * 絵文字として描画される <:名前:ID> 形式にする。
+ */
+function displayEmoji(emoji: string): string {
+  return emoji.includes(":") ? `<:${emoji}>` : emoji;
 }
 
 /**
@@ -99,9 +107,18 @@ export function buildNotificationMessage(
       lines.push(`   …ほか ${awaitingList.length - MAX_LISTED_CHANNELS} 件`);
     }
 
+    const emojiLabels = resolveEmojisOf(
+      guildConfig.replyMonitor ?? {
+        enabled: false,
+        staffRoleIds: [],
+        excludedChannelIds: [],
+      }
+    )
+      .map(displayEmoji)
+      .join(" ");
     lines.push("");
     lines.push(
-      "> 対応不要な場合は、対象の最終メッセージに ✅ リアクションを付けるとアラート対象外になります。"
+      `> 対応不要な場合は、対象の最終メッセージに ${emojiLabels} リアクションを付けるとアラート対象外になります。`
     );
   }
 

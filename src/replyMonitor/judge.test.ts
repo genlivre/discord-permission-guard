@@ -1,7 +1,7 @@
 // src/replyMonitor/judge.test.ts
 import { describe, expect, it } from "vitest";
 import type { DiscordMessage } from "../types";
-import { filterJudgeable, hasCheckReaction, judgeChannel } from "./judge";
+import { filterJudgeable, judgeChannel, matchedResolveEmojis } from "./judge";
 
 const STAFF_ID = "staff-1";
 const ARTIST_ID = "artist-1";
@@ -90,27 +90,54 @@ describe("judgeChannel", () => {
   });
 });
 
-describe("hasCheckReaction", () => {
-  it("✅ リアクションを検出する", () => {
+describe("matchedResolveEmojis", () => {
+  it("設定された標準絵文字のリアクションを検出する", () => {
     const m = msg({
       authorId: ARTIST_ID,
       reactions: [{ count: 1, emoji: { id: null, name: "✅" } }],
     });
-    expect(hasCheckReaction(m)).toBe(true);
+    expect(matchedResolveEmojis(m, ["✅"])).toEqual(["✅"]);
   });
 
-  it("✅ 以外のリアクション（🙇 等）やカスタム絵文字は返信扱いにしない", () => {
+  it("設定に無いリアクション（🙇 等）は対応済み扱いにしない", () => {
     const bowing = msg({
       authorId: ARTIST_ID,
       reactions: [{ count: 3, emoji: { id: null, name: "🙇" } }],
     });
+    const none = msg({ authorId: ARTIST_ID });
+    expect(matchedResolveEmojis(bowing, ["✅"])).toEqual([]);
+    expect(matchedResolveEmojis(none, ["✅"])).toEqual([]);
+  });
+
+  it("複数の対応済み絵文字を設定できる", () => {
+    const m = msg({
+      authorId: ARTIST_ID,
+      reactions: [
+        { count: 1, emoji: { id: null, name: "🙆" } },
+        { count: 1, emoji: { id: null, name: "👍" } },
+      ],
+    });
+    expect(matchedResolveEmojis(m, ["✅", "🙆"])).toEqual(["🙆"]);
+  });
+
+  it("カスタム絵文字は 名前:ID 形式で設定し、ID で照合する", () => {
+    const m = msg({
+      authorId: ARTIST_ID,
+      reactions: [{ count: 1, emoji: { id: "123456789", name: "party_ok" } }],
+    });
+    expect(matchedResolveEmojis(m, ["party_ok:123456789"])).toEqual([
+      "party_ok:123456789",
+    ]);
+    // ID が違えば同名でも照合しない
+    expect(matchedResolveEmojis(m, ["party_ok:999999999"])).toEqual([]);
+  });
+
+  it("標準絵文字の設定はカスタム絵文字の同名 name には一致しない", () => {
+    // 「✅」という name を持つカスタム絵文字を標準 ✅ の設定で拾わない
     const custom = msg({
       authorId: ARTIST_ID,
       reactions: [{ count: 1, emoji: { id: "123456", name: "✅" } }],
     });
-    const none = msg({ authorId: ARTIST_ID });
-    expect(hasCheckReaction(bowing)).toBe(false);
-    expect(hasCheckReaction(custom)).toBe(false);
-    expect(hasCheckReaction(none)).toBe(false);
+    expect(matchedResolveEmojis(custom, ["✅"])).toEqual([]);
   });
 });
