@@ -276,6 +276,62 @@ describe("runReplyPoll", () => {
     expect(deferred.every((s) => !s.lastError)).toBe(true);
   });
 
+  it("大規模ギルドがバジェットを使い切っても後続ギルドは独立したバジェットで処理される", async () => {
+    const env = makeEnv();
+    const GUILD2_ID = "1111111111111111111";
+    const guild2Channel = channel({
+      id: "6666666666666666666",
+      name: "artist-guild2",
+    });
+    const guild2Config: GuildConfig = {
+      ...guildConfig,
+      guildId: GUILD2_ID,
+      guildName: "第2ギルド",
+    };
+
+    vi.mocked(fetchGuildChannels).mockImplementation(async (_env, guildId) =>
+      guildId === GUILD2_ID
+        ? [guild2Channel]
+        : Array.from({ length: 60 }, (_, i) =>
+            channel({
+              id: `90000000000000${String(20000 + i)}`,
+              name: `artist-big-${i}`,
+            })
+          )
+    );
+    vi.mocked(fetchChannelMessages).mockResolvedValue([msg(ARTIST_ID)]);
+
+    const results = await runReplyPoll(env, [guildConfig, guild2Config]);
+
+    // ギルド1はバジェット超過で一部持ち越し
+    expect(
+      Object.values(results[0].state).some((s) => s.pendingRescan)
+    ).toBe(true);
+    // ギルド2は独立バジェットで正常に処理される（スターブしない）
+    expect(results[1].error).toBeUndefined();
+    expect(results[1].state[guild2Channel.id].awaitingReply).toBe(true);
+  });
+
+  it("REPLY_API_BUDGET_PER_GUILD でバジェットを引き上げられる", async () => {
+    const env = { ...makeEnv(), REPLY_API_BUDGET_PER_GUILD: "250" };
+    vi.mocked(fetchGuildChannels).mockResolvedValue(
+      Array.from({ length: 60 }, (_, i) =>
+        channel({
+          id: `90000000000000${String(30000 + i)}`,
+          name: `artist-${i}`,
+        })
+      )
+    );
+    vi.mocked(fetchChannelMessages).mockResolvedValue([msg(ARTIST_ID)]);
+
+    const [result] = await runReplyPoll(env, [guildConfig]);
+    // 250 あれば 60 チャンネルは全件処理できる（持ち越しなし）
+    expect(
+      Object.values(result.state).every((s) => !s.pendingRescan)
+    ).toBe(true);
+    expect(Object.keys(result.state)).toHaveLength(60);
+  });
+
   it("除外チャンネルとフォーラムは監視対象にしない", async () => {
     const env = makeEnv();
     const excluded = channel({ id: "8888888888888888888", name: "staff-room" });

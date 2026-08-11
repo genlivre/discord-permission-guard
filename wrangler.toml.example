@@ -25,3 +25,8 @@ preview_id = "YOUR_PREVIEW_KV_NAMESPACE_ID"
 [vars]
 # 必要ならここに固定の設定を書いてもOK（文字列のみ）
 # 例: ENVIRONMENT = "prod"
+
+# 返信監視: 1ギルドあたりの Discord API 呼び出し上限（既定 40 = Free プランでも安全）。
+# Workers Paid プラン（サブリクエスト上限 1,000/実行）なら引き上げ推奨。
+# 目安: 250 × ギルド数 + 権限チェック分 が 1,000 を超えないように。
+# REPLY_API_BUDGET_PER_GUILD = "250"
