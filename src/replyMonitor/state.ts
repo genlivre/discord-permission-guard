@@ -30,6 +30,11 @@ export interface ChannelReplyState {
   // 新しいメッセージが来る（IDが変わる）と自動的に未対応へ戻る
   manualCheckMessageId?: string;
 
+  // 管理画面で「不問」（対応不要のまま放置でOK）にした時点の最新メッセージID。
+  // 有効期間の仕組みは manualCheckMessageId と同じ（新着メッセージで自動失効）。
+  // チェックとの違いは意味論のみ: チェック=対応した / 不問=対応不要
+  dismissedMessageId?: string;
+
   // 直近のポーリングエラー（403 = Bot に閲覧権限がない 等）
   lastError?: string;
   lastErrorAt?: string; // ISO8601
@@ -89,6 +94,16 @@ export function hasValidManualCheck(state: ChannelReplyState): boolean {
 }
 
 /**
+ * 管理画面の「不問」が現在も有効か（不問後に新しいメッセージが来ていないか）。
+ */
+export function hasValidDismiss(state: ChannelReplyState): boolean {
+  return (
+    state.dismissedMessageId !== undefined &&
+    state.dismissedMessageId === state.latestMessageId
+  );
+}
+
+/**
  * アラート対象（実効未返信）かどうか。
  * 未返信かつ、運営の ✅ も管理画面の「対応済み」チェックも付いておらず、
  * 基準日時（baselineAt）より後にメッセージがあるもの。
@@ -98,7 +113,12 @@ export function isEffectivelyAwaiting(
   state: ChannelReplyState,
   baselineAt?: string
 ): boolean {
-  if (!state.awaitingReply || state.hasStaffCheck || hasValidManualCheck(state)) {
+  if (
+    !state.awaitingReply ||
+    state.hasStaffCheck ||
+    hasValidManualCheck(state) ||
+    hasValidDismiss(state)
+  ) {
     return false;
   }
   if (baselineAt && state.latestMessageAt) {
