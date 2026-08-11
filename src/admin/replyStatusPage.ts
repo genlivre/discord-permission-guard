@@ -41,7 +41,13 @@ export function renderReplyStatusPage(): string {
     button:hover, a.button:hover { background: #4752c4; }
     button.secondary, a.button.secondary { background: #4f545c; }
     button.secondary:hover, a.button.secondary:hover { background: #686d73; }
+    button.danger { background: #7a2f3f; }
+    button.danger:hover { background: #9a3a4f; }
     button:disabled { opacity: 0.5; cursor: wait; }
+    .btn-sm { padding: 4px 10px !important; font-size: 12px !important; }
+    .row-checked td { opacity: 0.55; }
+    .row-checked .ch-name { text-decoration: line-through; }
+    .check-box { width: 16px; height: 16px; cursor: pointer; accent-color: #3ba55c; }
     .card { background: #2d2d44; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
     .card-header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 12px; }
     .muted { color: #72767d; font-size: 12px; }
@@ -82,10 +88,16 @@ export function renderReplyStatusPage(): string {
       </span>
     </div>
     <p class="sub">
-      「最新の発言が運営以外のまま」のチャンネル一覧です。対応不要の場合は Discord 側で最終メッセージに
-      対応済みリアクション（✅ 等）を付けると一覧から外れます。
+      「最新の発言が運営以外のまま」のチャンネル一覧です。チェックを付けると対応済み扱いになり通知からも外れます
+      （新しいメッセージが来ると自動で未対応に戻ります）。Discord 側で最終メッセージに ✅ を付けても外れます。
       <span id="generated-at"></span>
     </p>
+    <div style="margin-bottom: 14px;">
+      <label style="font-size: 13px; color: #b9bbbe; display: inline-flex; align-items: center; gap: 6px; cursor: pointer;">
+        <input type="checkbox" id="filter-unchecked" checked onchange="renderAll()">
+        未チェックのみ表示
+      </label>
+    </div>
     <div id="status"></div>
     <div id="content"><div class="loading">読み込み中...</div></div>
   </div>
@@ -124,23 +136,37 @@ export function renderReplyStatusPage(): string {
       return '';
     }
 
-    function renderGuild(g, now) {
-      const awaitingRows = g.awaitingChannels.map(ch => \`
-        <tr>
+    function renderGuild(g, now, onlyUnchecked) {
+      const visible = onlyUnchecked
+        ? g.awaitingChannels.filter(ch => !ch.manualChecked)
+        : g.awaitingChannels;
+      const uncheckedCount = g.awaitingChannels.filter(ch => !ch.manualChecked).length;
+
+      const awaitingRows = visible.map(ch => \`
+        <tr class="\${ch.manualChecked ? 'row-checked' : ''}">
+          <td style="width: 32px;">
+            <input type="checkbox" class="check-box" \${ch.manualChecked ? 'checked' : ''}
+                   onchange="toggleCheck('\${g.guildId}', '\${ch.channelId}', this.checked, this)">
+          </td>
           <td class="ch-name">#\${esc(ch.channelName)}</td>
           <td>\${fmtJst(ch.awaitingSince)}</td>
           <td class="\${elapsedClass(ch.awaitingSince, now)}">\${fmtElapsed(ch.awaitingSince, now)}</td>
-          <td><a class="button secondary" style="padding: 4px 10px; font-size: 12px;"
-                 href="\${esc(ch.jumpUrl)}" target="_blank" rel="noopener noreferrer">開く ↗</a></td>
+          <td style="white-space: nowrap;">
+            <a class="button secondary btn-sm" href="\${esc(ch.jumpUrl)}" target="_blank" rel="noopener noreferrer">メッセージ ↗</a>
+            <a class="button secondary btn-sm" href="\${esc(ch.channelUrl)}" target="_blank" rel="noopener noreferrer">チャンネル ↗</a>
+            <button class="danger btn-sm" onclick="excludeChannel('\${g.guildId}', '\${ch.channelId}', '\${esc(ch.channelName)}')">対象外にする</button>
+          </td>
         </tr>
       \`).join('');
 
       const awaitingHtml = g.awaitingChannels.length === 0
         ? '<p class="ok-line">✅ 未返信のチャンネルはありません</p>'
-        : \`<table>
-             <thead><tr><th>チャンネル</th><th>最初の未返信 (JST)</th><th>経過</th><th></th></tr></thead>
-             <tbody>\${awaitingRows}</tbody>
-           </table>\`;
+        : visible.length === 0
+          ? '<p class="ok-line">✅ 未チェックの返信待ちはありません（チェック済み ' + g.awaitingChannels.length + ' 件）</p>'
+          : \`<table>
+               <thead><tr><th></th><th>チャンネル</th><th>最初の未返信 (JST)</th><th>経過</th><th></th></tr></thead>
+               <tbody>\${awaitingRows}</tbody>
+             </table>\`;
 
       const staleHtml = (g.staleNotifyDays && g.staleChannels.length > 0) ? \`
         <div class="section">
@@ -159,7 +185,13 @@ export function renderReplyStatusPage(): string {
         <div class="section">
           <h3 class="section-title" style="color: #f9e2af;">⚠️ 取得できないチャンネル（\${g.errorChannels.length}件・Bot の閲覧権限または監視除外設定を確認）</h3>
           <div class="error-list">
-            \${g.errorChannels.map(ch => \`#\${esc(ch.channelName)} — \${esc(ch.lastError)}\`).join('<br>')}
+            \${g.errorChannels.map(ch => \`
+              <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                <span>#\${esc(ch.channelName)} — \${esc(ch.lastError)}</span>
+                <a class="button secondary btn-sm" href="\${esc(ch.channelUrl)}" target="_blank" rel="noopener noreferrer">チャンネル ↗</a>
+                <button class="danger btn-sm" onclick="excludeChannel('\${g.guildId}', '\${ch.channelId}', '\${esc(ch.channelName)}')">対象外にする</button>
+              </div>
+            \`).join('')}
           </div>
         </div>
       \` : '';
@@ -168,14 +200,16 @@ export function renderReplyStatusPage(): string {
         ? \`<div class="warn-banner">⏳ データ取得中のチャンネルが \${g.pendingRescanCount} 件あります（一覧は不完全です。数十分後に再確認してください）</div>\`
         : '';
 
+      const checkedCount = g.awaitingChannels.length - uncheckedCount;
       return \`
         <div class="card">
           <div class="card-header">
             <h2>\${esc(g.guildName)}</h2>
             <span class="muted">監視 \${g.totalWatchedChannels} チャンネル</span>
-            \${g.awaitingChannels.length > 0
-              ? \`<span class="chip red">返信待ち \${g.awaitingChannels.length} 件</span>\`
+            \${uncheckedCount > 0
+              ? \`<span class="chip red">返信待ち \${uncheckedCount} 件</span>\`
               : '<span class="chip green">返信待ちなし</span>'}
+            \${checkedCount > 0 ? \`<span class="chip yellow">チェック済み \${checkedCount} 件</span>\` : ''}
           </div>
           \${awaitingHtml}
           \${staleHtml}
@@ -185,26 +219,81 @@ export function renderReplyStatusPage(): string {
       \`;
     }
 
+    let currentData = null;
+
+    function renderAll() {
+      if (!currentData) return;
+      const content = document.getElementById('content');
+      const now = Date.now();
+      const onlyUnchecked = document.getElementById('filter-unchecked').checked;
+
+      const total = currentData.guilds.reduce(
+        (sum, g) => sum + g.awaitingChannels.filter(ch => !ch.manualChecked).length, 0);
+      const chip = document.getElementById('total-chip');
+      chip.className = total > 0 ? 'chip red' : 'chip green';
+      chip.textContent = total > 0 ? '返信待ち 合計 ' + total + ' 件' : 'すべて対応済み';
+      document.getElementById('generated-at').textContent = '最終更新: ' + fmtJst(currentData.generatedAt);
+
+      content.innerHTML = currentData.guilds.map(g => renderGuild(g, now, onlyUnchecked)).join('')
+        || '<div class="card"><p class="muted">返信監視が有効なサーバーがありません。/admin から設定してください。</p></div>';
+    }
+
     async function load() {
       const content = document.getElementById('content');
       try {
         const res = await fetch('/admin/api/reply-status-all');
         if (!res.ok) throw new Error('HTTP ' + res.status);
-        const data = await res.json();
-        const now = Date.now();
-
-        const total = data.guilds.reduce((sum, g) => sum + g.awaitingChannels.length, 0);
-        const chip = document.getElementById('total-chip');
-        chip.className = total > 0 ? 'chip red' : 'chip green';
-        chip.textContent = total > 0 ? '返信待ち 合計 ' + total + ' 件' : 'すべて返信済み';
-        document.getElementById('generated-at').textContent = '最終更新: ' + fmtJst(data.generatedAt);
-
-        content.innerHTML = data.guilds.map(g => renderGuild(g, now)).join('')
-          || '<div class="card"><p class="muted">返信監視が有効なサーバーがありません。/admin から設定してください。</p></div>';
+        currentData = await res.json();
+        renderAll();
       } catch (e) {
         content.innerHTML = '';
         document.getElementById('status').innerHTML =
           '<div class="status error">読み込みに失敗しました: ' + esc(e.message) + '</div>';
+      }
+    }
+
+    async function toggleCheck(guildId, channelId, checked, el) {
+      el.disabled = true;
+      try {
+        const res = await fetch('/admin/api/reply-check', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ guildId, channelId, checked })
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        // ローカル状態を更新して再描画（再取得なしで軽快に）
+        const guild = currentData.guilds.find(g => g.guildId === guildId);
+        const ch = guild && guild.awaitingChannels.find(c => c.channelId === channelId);
+        if (ch) ch.manualChecked = checked;
+        renderAll();
+      } catch (e) {
+        el.checked = !checked;
+        el.disabled = false;
+        document.getElementById('status').innerHTML =
+          '<div class="status error">チェックの更新に失敗しました: ' + esc(e.message) + '</div>';
+      }
+    }
+
+    async function excludeChannel(guildId, channelId, channelName) {
+      if (!confirm('#' + channelName + ' を監視対象外にしますか？\\n（/admin の「監視除外チャンネル」からいつでも戻せます）')) return;
+      try {
+        const res = await fetch('/admin/api/reply-exclude', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ guildId, channelId })
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const guild = currentData.guilds.find(g => g.guildId === guildId);
+        if (guild) {
+          guild.awaitingChannels = guild.awaitingChannels.filter(c => c.channelId !== channelId);
+          guild.staleChannels = guild.staleChannels.filter(c => c.channelId !== channelId);
+          guild.errorChannels = guild.errorChannels.filter(c => c.channelId !== channelId);
+          guild.totalWatchedChannels -= 1;
+        }
+        renderAll();
+      } catch (e) {
+        document.getElementById('status').innerHTML =
+          '<div class="status error">対象外への変更に失敗しました: ' + esc(e.message) + '</div>';
       }
     }
 

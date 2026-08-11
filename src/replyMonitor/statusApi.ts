@@ -7,6 +7,7 @@
 import type { GuildConfig } from "../config";
 import { elapsedDays } from "./notifier";
 import {
+  hasValidManualCheck,
   isEffectivelyAwaiting,
   loadGuildReplyState,
   type ChannelReplyState,
@@ -16,6 +17,10 @@ import {
 function jumpUrl(guildId: string, s: ChannelReplyState): string {
   const messageId = s.awaitingSinceMessageId ?? s.latestMessageId ?? "";
   return `https://discord.com/channels/${guildId}/${s.channelId}/${messageId}`;
+}
+
+function channelUrl(guildId: string, channelId: string): string {
+  return `https://discord.com/channels/${guildId}/${channelId}`;
 }
 
 export interface GuildStatusReport {
@@ -30,6 +35,9 @@ export interface GuildStatusReport {
     awaitingSince: string | null;
     latestMessageAt: string | null;
     jumpUrl: string;
+    channelUrl: string;
+    // 管理画面で「対応済み」チェックが付いているか
+    manualChecked: boolean;
   }>;
   staleChannels: Array<{
     channelId: string;
@@ -37,12 +45,14 @@ export interface GuildStatusReport {
     lastHumanMessageAt: string;
     elapsedDays: number;
     jumpUrl: string;
+    channelUrl: string;
   }>;
   errorChannels: Array<{
     channelId: string;
     channelName: string;
     lastError: string;
     lastErrorAt: string | null;
+    channelUrl: string;
   }>;
 }
 
@@ -57,8 +67,10 @@ export function buildGuildStatusReport(
   const states = Object.values(state);
   const staleDays = guildConfig.replyMonitor?.staleNotifyDays ?? 0;
 
+  // 「対応済み」チェックが付いたものも一覧には含め（フラグ付き）、
+  // 画面側で絞り込み表示できるようにする。運営の ✅ 済みは従来どおり含めない
   const awaitingChannels = states
-    .filter(isEffectivelyAwaiting)
+    .filter((s) => s.awaitingReply && !s.hasStaffCheck)
     .sort((a, b) => (a.awaitingSince ?? "").localeCompare(b.awaitingSince ?? ""))
     .map((s) => ({
       channelId: s.channelId,
@@ -66,6 +78,8 @@ export function buildGuildStatusReport(
       awaitingSince: s.awaitingSince ?? null,
       latestMessageAt: s.latestMessageAt ?? null,
       jumpUrl: jumpUrl(guildConfig.guildId, s),
+      channelUrl: channelUrl(guildConfig.guildId, s.channelId),
+      manualChecked: hasValidManualCheck(s),
     }));
 
   // 疎遠一覧は通知と同じ除外基準（エラー中・持ち越し中・未返信は含めない）
@@ -89,6 +103,7 @@ export function buildGuildStatusReport(
             lastHumanMessageAt: s.lastHumanMessageAt!,
             elapsedDays: elapsedDays(s.lastHumanMessageAt!, now),
             jumpUrl: jumpUrl(guildConfig.guildId, s),
+            channelUrl: channelUrl(guildConfig.guildId, s.channelId),
           }))
       : [];
 
@@ -99,6 +114,7 @@ export function buildGuildStatusReport(
       channelName: s.channelName,
       lastError: s.lastError!,
       lastErrorAt: s.lastErrorAt ?? null,
+      channelUrl: channelUrl(guildConfig.guildId, s.channelId),
     }));
 
   return {

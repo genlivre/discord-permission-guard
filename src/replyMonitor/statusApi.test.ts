@@ -124,6 +124,10 @@ describe("buildGuildStatusReport", () => {
     expect(report.awaitingChannels.map((c) => c.channelName)).toEqual([
       "artist-awaiting",
     ]);
+    expect(report.awaitingChannels[0].manualChecked).toBe(false);
+    expect(report.awaitingChannels[0].channelUrl).toBe(
+      `https://discord.com/channels/${GUILD_ID}/1000000000000000001`
+    );
     expect(report.staleChannels.map((c) => c.channelName)).toEqual([
       "artist-checked",
       "artist-stale",
@@ -133,8 +137,35 @@ describe("buildGuildStatusReport", () => {
     ]);
     expect(report.pendingRescanCount).toBe(1);
     expect(report.staleNotifyDays).toBe(14);
-    expect(report.awaitingChannels[0].jumpUrl).toBe(
-      `https://discord.com/channels/${GUILD_ID}/1000000000000000001/m1`
+    expect(report.errorChannels[0].channelUrl).toBe(
+      `https://discord.com/channels/${GUILD_ID}/1000000000000000005`
     );
+  });
+
+  it("「対応済み」チェック付きの未返信は manualChecked フラグ付きで一覧に含める", () => {
+    const stateMap = {
+      checked: state({
+        channelId: "1000000000000000007",
+        channelName: "artist-manual-checked",
+        awaitingReply: true,
+        awaitingSince: "2026-08-10T00:00:00.000Z",
+        latestMessageId: "m100",
+        manualCheckMessageId: "m100",
+      }),
+      expired: state({
+        channelId: "1000000000000000008",
+        channelName: "artist-check-expired",
+        awaitingReply: true,
+        awaitingSince: "2026-08-10T01:00:00.000Z",
+        latestMessageId: "m200", // チェック時とは別のメッセージ → 失効
+        manualCheckMessageId: "m100",
+      }),
+    };
+    const report = buildGuildStatusReport(guildConfig, stateMap, now);
+    const byName = Object.fromEntries(
+      report.awaitingChannels.map((c) => [c.channelName, c.manualChecked])
+    );
+    expect(byName["artist-manual-checked"]).toBe(true);
+    expect(byName["artist-check-expired"]).toBe(false);
   });
 });
