@@ -8,6 +8,8 @@ import type { Env as DiscordEnv } from "./discord";
 export interface Env extends DiscordEnv {
   CONFIG_KV: KVNamespace;
   GUILDS_CONFIG?: string; // JSON形式のギルド設定（KV未設定時のフォールバック）
+  // 返信監視: 1ギルドあたりの Discord API 呼び出し上限（既定 40。Paid プランなら "250" 等に引き上げ）
+  REPLY_API_BUDGET_PER_GUILD?: string;
 }
 
 // Cron 式（wrangler.toml の [triggers].crons と一致させること）

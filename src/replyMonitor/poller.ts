@@ -42,13 +42,26 @@ const CHANNEL_FETCH_LIMIT = 50;
 // メンバーのロールキャッシュ TTL（秒）
 const MEMBER_ROLE_CACHE_TTL = 3600;
 
-// 1回のポーリング実行で Discord API を呼ぶ上限。
-// Cloudflare Workers のサブリクエスト上限（Free: 50/実行）を超えないための
-// 安全弁。上限に達したチャンネルは前回状態のまま持ち越し、次回実行で処理される
+// 1ギルドあたりの Discord API 呼び出し上限（1回のポーリング実行内）。
+// Cloudflare Workers のサブリクエスト上限を超えないための安全弁。
+// 上限に達したチャンネルは前回状態のまま持ち越し、次回実行で処理される
 // （カーソルを進めないため確実に再処理対象になる）。
-const DEFAULT_API_BUDGET = 40;
+// ギルドごとに独立させているのは、チャンネル数の多いギルドが上限を使い切って
+// 後続ギルドが処理されない（スターブする）のを防ぐため。
+// 既定値は Free プラン（50サブリクエスト/実行）でも安全な値。Paid プランでは
+// 環境変数 REPLY_API_BUDGET_PER_GUILD で引き上げる（例: "250"）。
+const DEFAULT_API_BUDGET_PER_GUILD = 40;
 
-export type PollEnv = Env & StateKV;
+export type PollEnv = Env &
+  StateKV & {
+    // 1ギルドあたりの API バジェット上書き（wrangler.toml の [vars] で設定）
+    REPLY_API_BUDGET_PER_GUILD?: string;
+  };
+
+function perGuildBudget(env: PollEnv): number {
+  const n = Number(env.REPLY_API_BUDGET_PER_GUILD);
+  return Number.isInteger(n) && n > 0 ? n : DEFAULT_API_BUDGET_PER_GUILD;
+}
 
 /** API バジェット超過を示す内部エラー（チャンネル持ち越しに使う） */
 class BudgetExhaustedError extends Error {
@@ -359,12 +372,13 @@ export async function runReplyPoll(
   guilds: GuildConfig[]
 ): Promise<GuildPollResult[]> {
   const results: GuildPollResult[] = [];
-  const budget = new ApiBudget(DEFAULT_API_BUDGET);
 
   for (const guildConfig of guilds) {
     if (!guildConfig.replyMonitor?.enabled) continue;
 
     try {
+      // バジェットはギルドごとに独立（大規模ギルドによるスターブ防止）
+      const budget = new ApiBudget(perGuildBudget(env));
       results.push(await pollGuild(env, guildConfig, budget));
     } catch (e) {
       console.error(
