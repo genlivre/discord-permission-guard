@@ -239,7 +239,7 @@ describe("buildNotificationMessage", () => {
     expect(message).toBeNull();
   });
 
-  describe("疎遠通知（staleNotifyDays）", () => {
+  describe("疎遠チャンネル（staleNotifyDays）", () => {
     const staleConfig: GuildConfig = {
       ...guildConfig,
       replyMonitor: {
@@ -255,84 +255,21 @@ describe("buildNotificationMessage", () => {
       lastHumanMessageAt: "2026-07-22T03:00:00.000Z",
     });
 
-    it("朝サマリーに設定日数以上やり取りのないチャンネルを載せる", () => {
-      const message = buildNotificationMessage(
+    it("疎遠チャンネルは Discord 通知には載せない（ページ専用）", () => {
+      const morning = buildNotificationMessage(
         { guildConfig: staleConfig, state: { c1: staleState } },
         "morning",
         now
       );
-      expect(message).toContain("しばらくやり取りのないチャンネル");
-      expect(message).toContain("#artist-tanaka");
-      expect(message).toContain("最後のやり取りから 20日");
-    });
+      expect(morning).not.toContain("しばらくやり取りのないチャンネル");
+      expect(morning).not.toContain("artist-tanaka");
 
-    it("日中リマインドには疎遠チャンネルを載せない", () => {
-      const message = buildNotificationMessage(
+      const reminder = buildNotificationMessage(
         { guildConfig: staleConfig, state: { c1: staleState } },
         "reminder",
         now
       );
-      expect(message).toBeNull();
-    });
-
-    it("設定日数未満のチャンネルは載せない", () => {
-      const recent = state({
-        lastHumanMessageAt: "2026-08-05T03:00:00.000Z", // 6日前
-      });
-      const message = buildNotificationMessage(
-        { guildConfig: staleConfig, state: { c1: recent } },
-        "morning",
-        now
-      );
-      expect(message).not.toContain("しばらくやり取りのないチャンネル");
-    });
-
-    it("未返信として列挙済みのチャンネルは疎遠一覧に重複させない", () => {
-      const awaitingAndStale = {
-        ...awaitingState,
-        lastHumanMessageAt: "2026-07-22T03:00:00.000Z",
-      };
-      const message = buildNotificationMessage(
-        { guildConfig: staleConfig, state: { c1: awaitingAndStale } },
-        "morning",
-        now
-      );
-      expect(message).toContain("返信待ちのチャンネルが");
-      expect(message).not.toContain("しばらくやり取りのないチャンネル");
-    });
-
-    it("取得エラー中のチャンネルは疎遠一覧に載せない（古い時刻での誤検知防止）", () => {
-      const errored = {
-        ...staleState,
-        lastError: "Discord API error (messages): 403",
-      };
-      const message = buildNotificationMessage(
-        { guildConfig: staleConfig, state: { c1: errored } },
-        "morning",
-        now
-      );
-      expect(message).not.toContain("しばらくやり取りのないチャンネル");
-      expect(message).toContain("取得できないチャンネル");
-    });
-
-    it("バジェット持ち越し中のチャンネルは疎遠一覧から除外し、未完了を警告する", () => {
-      const pending = { ...staleState, pendingRescan: true };
-      const message = buildNotificationMessage(
-        { guildConfig: staleConfig, state: { c1: pending } },
-        "morning",
-        now
-      );
-      expect(message).not.toContain("しばらくやり取りのないチャンネル");
-      expect(message).toContain("疎遠チェックのデータ取得が未完了のチャンネルが 1 件");
-    });
-
-    it("staleNotifyDays 未設定なら疎遠一覧は出さない", () => {
-      const message = buildNotificationMessage(
-        { guildConfig, state: { c1: staleState } },
-        "morning",
-        now
-      );
-      expect(message).not.toContain("しばらくやり取りのないチャンネル");
+      expect(reminder).toBeNull();
     });
   });
 
