@@ -11,6 +11,11 @@ import { isEffectivelyAwaiting, type ChannelReplyState } from "./state";
 
 export type NotificationKind = "morning" | "reminder";
 
+export type NotifyEnv = PollEnv & {
+  // 未返信チェックページのURL（通知末尾に「詳細はこちら」として載せる。未設定なら省略）
+  REPLY_STATUS_PAGE_URL?: string;
+};
+
 // Discord メッセージの 2000 文字制限に収めるための最大表示件数
 // （ジャンプリンクが1件あたり約90文字あるため、余裕を持たせて 10 件に抑える）
 const MAX_LISTED_CHANNELS = 10;
@@ -76,7 +81,8 @@ function displayEmoji(emoji: string): string {
 export function buildNotificationMessage(
   result: GuildPollResult,
   kind: NotificationKind,
-  now: Date
+  now: Date,
+  statusPageUrl?: string
 ): string | null {
   const { guildConfig, state } = result;
   const states = Object.values(state);
@@ -222,6 +228,12 @@ export function buildNotificationMessage(
     );
   }
 
+  if (statusPageUrl) {
+    lines.push("");
+    // <> で囲んで Discord のリンクプレビュー展開を抑止する
+    lines.push(`📋 詳細の確認・消し込みはこちら: <${statusPageUrl}>`);
+  }
+
   return truncateForDiscord(lines.join("\n"));
 }
 
@@ -238,7 +250,7 @@ function truncateForDiscord(message: string): string {
  * 返信監視が有効な全ギルドについて、ポーリング → 通知を実行する。
  */
 export async function runReplyNotification(
-  env: PollEnv,
+  env: NotifyEnv,
   guilds: GuildConfig[],
   kind: NotificationKind
 ): Promise<void> {
@@ -247,7 +259,12 @@ export async function runReplyNotification(
   const sendFailures: string[] = [];
 
   for (const result of results) {
-    const message = buildNotificationMessage(result, kind, now);
+    const message = buildNotificationMessage(
+      result,
+      kind,
+      now,
+      env.REPLY_STATUS_PAGE_URL
+    );
     if (message === null) {
       console.log(
         `[${result.guildConfig.guildName}] no unreplied channels, skipping ${kind} notification.`

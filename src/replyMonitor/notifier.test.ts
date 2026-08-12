@@ -107,6 +107,24 @@ describe("buildNotificationMessage", () => {
     expect(message).toContain("（前日から持ち越し）");
   });
 
+  it("statusPageUrl が渡されたら通知末尾に確認ページへのリンクを載せる", () => {
+    const url = "https://example.workers.dev/admin/reply-status";
+    const withLink = buildNotificationMessage(
+      { guildConfig, state: { c1: awaitingState } },
+      "morning",
+      now,
+      url
+    );
+    expect(withLink).toContain(`詳細の確認・消し込みはこちら: <${url}>`);
+
+    const withoutLink = buildNotificationMessage(
+      { guildConfig, state: { c1: awaitingState } },
+      "morning",
+      now
+    );
+    expect(withoutLink).not.toContain("詳細の確認");
+  });
+
   it("案内文には設定した対応済みリアクションを表示する（カスタム絵文字は描画形式）", () => {
     const withEmojis: GuildConfig = {
       ...guildConfig,
