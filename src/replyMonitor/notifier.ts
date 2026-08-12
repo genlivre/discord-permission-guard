@@ -23,9 +23,6 @@ const MAX_LISTED_CHANNELS = 10;
 // 取得エラーのチャンネル名の最大表示件数
 const MAX_LISTED_ERRORS = 5;
 
-// 疎遠チャンネル（しばらくやり取りが無い）の最大表示件数
-const MAX_LISTED_STALE = 10;
-
 // Discord の content 上限（UTF-16 コード単位）
 const DISCORD_CONTENT_LIMIT = 2000;
 
@@ -164,52 +161,8 @@ export function buildNotificationMessage(
     }
   }
 
-  // 疎遠アーティスト検知: staleNotifyDays 日以上「人間のやり取り」が無いチャンネル。
-  // アクションを促すリマインドとは性質が異なるため朝サマリーのみに載せる。
-  // 未返信として上に列挙済みのチャンネルは重複させない。
-  const staleDays = guildConfig.replyMonitor?.staleNotifyDays ?? 0;
-  if (kind === "morning" && staleDays > 0) {
-    // 取得エラー中（古い時刻のまま）と再取得持ち越し中のチャンネルは、
-    // 誤った疎遠通知を避けるため一覧から除外する
-    const staleList = states
-      .filter(
-        (s) =>
-          !s.lastError &&
-          !s.pendingRescan &&
-          !isEffectivelyAwaiting(s, baselineAt) &&
-          s.lastHumanMessageAt !== undefined &&
-          elapsedDays(s.lastHumanMessageAt, now) >= staleDays
-      )
-      .sort((a, b) =>
-        (a.lastHumanMessageAt ?? "").localeCompare(b.lastHumanMessageAt ?? "")
-      );
-
-    if (staleList.length > 0) {
-      lines.push("");
-      lines.push(
-        `💤 **しばらくやり取りのないチャンネル**（${staleDays}日以上・${staleList.length}件）`
-      );
-      staleList.slice(0, MAX_LISTED_STALE).forEach((s, i) => {
-        const days = elapsedDays(s.lastHumanMessageAt!, now);
-        lines.push(
-          `${i + 1}. **#${s.channelName}** — 最後のやり取りから ${days}日`
-        );
-      });
-      if (staleList.length > MAX_LISTED_STALE) {
-        lines.push(`   …ほか ${staleList.length - MAX_LISTED_STALE} 件`);
-      }
-    }
-
-    // API バジェット持ち越しで未取得のチャンネルがある間は、
-    // 疎遠一覧が不完全であることを明示する
-    const pendingCount = states.filter((s) => s.pendingRescan).length;
-    if (pendingCount > 0) {
-      lines.push("");
-      lines.push(
-        `⚠️ 疎遠チェックのデータ取得が未完了のチャンネルが ${pendingCount} 件あります（次回以降の実行で自動的に処理されます）。`
-      );
-    }
-  }
+  // 疎遠チャンネル（しばらくやり取りが無い）は Discord 通知には載せない。
+  // 未返信チェックページ（/admin/reply-status）でのみ表示する
 
   // 補助案内は最後（切り捨てられても実害が無い情報）
   if (awaitingList.length > 0) {

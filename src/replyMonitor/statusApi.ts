@@ -107,7 +107,7 @@ export function buildGuildStatusReport(
       manualChecked: hasValidManualCheck(s),
     }));
 
-  // 疎遠一覧は通知と同じ除外基準（エラー中・持ち越し中・未返信は含めない）
+  // 疎遠一覧の除外基準: エラー中・持ち越し中・未返信・「不問」中は含めない
   const staleChannels =
     staleDays > 0
       ? states
@@ -115,6 +115,7 @@ export function buildGuildStatusReport(
             (s) =>
               !s.lastError &&
               !s.pendingRescan &&
+              !hasValidDismiss(s) &&
               !isEffectivelyAwaiting(s, baselineAt) &&
               s.lastHumanMessageAt !== undefined &&
               elapsedDays(s.lastHumanMessageAt, now) >= staleDays

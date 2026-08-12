@@ -169,6 +169,24 @@ describe("buildGuildStatusReport", () => {
     expect(byName["artist-check-expired"]).toBe(false);
   });
 
+  it("「不問」中のチャンネルは疎遠一覧にも載せない", () => {
+    const stateMap = {
+      dismissedStale: state({
+        channelId: "1000000000000000012",
+        channelName: "artist-dismissed-stale",
+        // 未返信ではないが、不問マークが最新メッセージと一致していて有効
+        latestMessageId: "m400",
+        dismissedMessageId: "m400",
+        lastHumanMessageAt: "2026-07-01T00:00:00.000Z", // 41日前 = 疎遠条件は満たす
+      }),
+    };
+    const report = buildGuildStatusReport(guildConfig, stateMap, now);
+    expect(report.staleChannels).toHaveLength(0);
+    expect(report.dismissedChannels.map((c) => c.channelName)).toEqual([
+      "artist-dismissed-stale",
+    ]);
+  });
+
   it("「不問」中のチャンネルは未返信一覧から外れ、dismissedChannels に載る", () => {
     const stateMap = {
       dismissed: state({
