@@ -30,3 +30,6 @@ preview_id = "YOUR_PREVIEW_KV_NAMESPACE_ID"
 # Workers Paid プラン（サブリクエスト上限 1,000/実行）なら引き上げ推奨。
 # 目安: 250 × ギルド数 + 権限チェック分 が 1,000 を超えないように。
 # REPLY_API_BUDGET_PER_GUILD = "250"
+
+# 通知末尾に「詳細の確認・消し込みはこちら」として載せる未返信チェックページのURL（任意）
+# REPLY_STATUS_PAGE_URL = "https://<your-worker>.workers.dev/admin/reply-status"

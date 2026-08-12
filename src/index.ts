@@ -10,6 +10,8 @@ export interface Env extends DiscordEnv {
   GUILDS_CONFIG?: string; // JSON形式のギルド設定（KV未設定時のフォールバック）
   // 返信監視: 1ギルドあたりの Discord API 呼び出し上限（既定 40。Paid プランなら "250" 等に引き上げ）
   REPLY_API_BUDGET_PER_GUILD?: string;
+  // 未返信チェックページのURL（通知末尾に載せる。未設定なら省略）
+  REPLY_STATUS_PAGE_URL?: string;
 }
 
 // Cron 式（wrangler.toml の [triggers].crons と一致させること）
