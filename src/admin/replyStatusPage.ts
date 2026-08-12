@@ -80,6 +80,8 @@ export function renderReplyStatusPage(): string {
     }
     details.help summary { cursor: pointer; color: #99aab5; user-select: none; }
     details.help summary:hover { color: #fff; }
+    .stale-accordion summary { cursor: pointer; user-select: none; }
+    .stale-accordion summary:hover { color: #fff; }
     .help-table { margin-top: 10px; }
     .help-table th {
       white-space: nowrap; vertical-align: top; color: #dcddde;
@@ -214,16 +216,16 @@ export function renderReplyStatusPage(): string {
              </table>\`;
 
       const staleHtml = (g.staleNotifyDays && g.staleChannels.length > 0) ? \`
-        <div class="section">
-          <h3 class="section-title">💤 しばらくやり取りのないチャンネル（\${g.staleNotifyDays}日以上・\${g.staleChannels.length}件）</h3>
-          <div class="tag-list">
+        <details class="section stale-accordion">
+          <summary class="section-title">💤 しばらくやり取りのないチャンネル（\${g.staleNotifyDays}日以上・\${g.staleChannels.length}件）</summary>
+          <div class="tag-list" style="margin-top: 8px;">
             \${g.staleChannels.map(ch => \`
               <a class="tag" href="\${esc(ch.jumpUrl)}" target="_blank" rel="noopener noreferrer">
                 #\${esc(ch.channelName)} <span class="days">\${ch.elapsedDays}日</span>
               </a>
             \`).join('')}
           </div>
-        </div>
+        </details>
       \` : '';
 
       const errorHtml = g.errorChannels.length > 0 ? \`
