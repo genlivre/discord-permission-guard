@@ -47,7 +47,12 @@ export function renderReplyStatusPage(): string {
     .btn-sm { padding: 4px 10px !important; font-size: 12px !important; }
     .row-checked td { opacity: 0.55; }
     .row-checked .ch-name { text-decoration: line-through; }
-    .check-box { width: 16px; height: 16px; cursor: pointer; accent-color: #3ba55c; }
+    button.success { background: #3ba55c; }
+    button.success:hover { background: #2d8049; }
+    .replied-mark {
+      display: inline-block; padding: 4px 10px; border-radius: 4px; font-size: 12px;
+      background: #1f4a2e; color: #7ee2a8; border: 1px solid #2f7a4a;
+    }
     .card { background: #2d2d44; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
     .card-header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 12px; }
     .muted { color: #72767d; font-size: 12px; }
@@ -110,10 +115,10 @@ export function renderReplyStatusPage(): string {
       <summary>各ボタンの説明（クリックで開閉）</summary>
       <table class="help-table">
         <tr>
-          <th>☑ チェック</th>
-          <td><b>対応した</b>ときに付けます。一覧には「チェック済み」として残り（「未チェックのみ表示」で非表示）、
-              朝サマリー・リマインドの通知対象から外れます。
-              <b>新しいメッセージが来ると自動でチェックが外れて</b>再び通知されます。</td>
+          <th>返事をした</th>
+          <td><b>Discord で返信した</b>ときに押します（返信すると10分以内に自動で消えますが、その場で消したいときに）。
+              一覧には「返事済み」として残り（「未対応のみ表示」で非表示）、通知対象からも外れます。
+              <b>新しいメッセージが来ると自動で未対応に戻り</b>再び通知されます。押し間違えたら「取り消す」で戻せます。</td>
         </tr>
         <tr>
           <th>不問にする</th>
@@ -129,19 +134,19 @@ export function renderReplyStatusPage(): string {
         </tr>
         <tr>
           <th>✅（Discord側）</th>
-          <td>運営ロールを持つメンバーが Discord 上で最終メッセージに対応済みリアクション（✅ 等、設定で変更可）を
-              付けた場合も、チェックと同様に通知対象から外れます。</td>
+          <td>運営ロールを持つメンバーが Discord 上で最終メッセージに対応済みリアクション（✅ 🙇 等、設定で変更可）を
+              付けた場合も、「返事をした」と同様に通知対象から外れます。</td>
         </tr>
         <tr>
           <th>使い分けの目安</th>
-          <td>返信した → <b>チェック</b> ／ 返信不要だが監視は続けたい → <b>不問</b> ／ そもそも監視不要 → <b>対象外</b></td>
+          <td>返信した → <b>返事をした</b> ／ 返信不要だが監視は続けたい → <b>不問にする</b> ／ そもそも監視不要 → <b>対象外にする</b></td>
         </tr>
       </table>
     </details>
     <div style="margin-bottom: 14px;">
       <label style="font-size: 13px; color: #b9bbbe; display: inline-flex; align-items: center; gap: 6px; cursor: pointer;">
         <input type="checkbox" id="filter-unchecked" checked onchange="renderAll()">
-        未チェックのみ表示
+        未対応のみ表示（「返事をした」を押したものを隠す）
       </label>
     </div>
     <div id="status"></div>
@@ -190,14 +195,14 @@ export function renderReplyStatusPage(): string {
 
       const awaitingRows = visible.map(ch => \`
         <tr class="\${ch.manualChecked ? 'row-checked' : ''}">
-          <td style="width: 32px;">
-            <input type="checkbox" class="check-box" \${ch.manualChecked ? 'checked' : ''}
-                   onchange="toggleCheck('\${g.guildId}', '\${ch.channelId}', this.checked, this)">
-          </td>
           <td class="ch-name">#\${esc(ch.channelName)}</td>
           <td>\${fmtJst(ch.awaitingSince)}</td>
           <td class="\${elapsedClass(ch.awaitingSince, now)}">\${fmtElapsed(ch.awaitingSince, now)}</td>
           <td style="white-space: nowrap;">
+            \${ch.manualChecked
+              ? \`<span class="replied-mark">返事済み</span>
+                 <button class="secondary btn-sm" onclick="setReplied('\${g.guildId}', '\${ch.channelId}', false)">取り消す</button>\`
+              : \`<button class="success btn-sm" onclick="setReplied('\${g.guildId}', '\${ch.channelId}', true)">返事をした</button>\`}
             <a class="button secondary btn-sm" href="\${esc(ch.jumpUrl)}" target="_blank" rel="noopener noreferrer">メッセージ ↗</a>
             <a class="button secondary btn-sm" href="\${esc(ch.channelUrl)}" target="_blank" rel="noopener noreferrer">チャンネル ↗</a>
             <button class="secondary btn-sm" onclick="dismissChannel('\${g.guildId}', '\${ch.channelId}', '\${esc(ch.channelName)}')">不問にする</button>
@@ -209,9 +214,9 @@ export function renderReplyStatusPage(): string {
       const awaitingHtml = g.awaitingChannels.length === 0
         ? '<p class="ok-line">✅ 未返信のチャンネルはありません</p>'
         : visible.length === 0
-          ? '<p class="ok-line">✅ 未チェックの返信待ちはありません（チェック済み ' + g.awaitingChannels.length + ' 件）</p>'
+          ? '<p class="ok-line">✅ 未対応の返信待ちはありません（返事済み ' + g.awaitingChannels.length + ' 件）</p>'
           : \`<table>
-               <thead><tr><th></th><th>チャンネル</th><th>最初の未返信 (JST)</th><th>経過</th><th></th></tr></thead>
+               <thead><tr><th>チャンネル</th><th>最初の未返信 (JST)</th><th>経過</th><th></th></tr></thead>
                <tbody>\${awaitingRows}</tbody>
              </table>\`;
 
@@ -271,7 +276,7 @@ export function renderReplyStatusPage(): string {
             \${uncheckedCount > 0
               ? \`<span class="chip red">返信待ち \${uncheckedCount} 件</span>\`
               : '<span class="chip green">返信待ちなし</span>'}
-            \${checkedCount > 0 ? \`<span class="chip yellow">チェック済み \${checkedCount} 件</span>\` : ''}
+            \${checkedCount > 0 ? \`<span class="chip yellow">返事済み \${checkedCount} 件</span>\` : ''}
             \${g.baselineAt ? \`<span class="muted" style="margin-left: auto;">\${fmtJst(g.baselineAt)} より前は不問</span>\` : ''}
           </div>
           \${awaitingHtml}
@@ -316,25 +321,22 @@ export function renderReplyStatusPage(): string {
       }
     }
 
-    async function toggleCheck(guildId, channelId, checked, el) {
-      el.disabled = true;
+    async function setReplied(guildId, channelId, replied) {
       try {
         const res = await fetch('/admin/api/reply-check', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ guildId, channelId, checked })
+          body: JSON.stringify({ guildId, channelId, checked: replied })
         });
         if (!res.ok) throw new Error('HTTP ' + res.status);
         // ローカル状態を更新して再描画（再取得なしで軽快に）
         const guild = currentData.guilds.find(g => g.guildId === guildId);
         const ch = guild && guild.awaitingChannels.find(c => c.channelId === channelId);
-        if (ch) ch.manualChecked = checked;
+        if (ch) ch.manualChecked = replied;
         renderAll();
       } catch (e) {
-        el.checked = !checked;
-        el.disabled = false;
         document.getElementById('status').innerHTML =
-          '<div class="status error">チェックの更新に失敗しました: ' + esc(e.message) + '</div>';
+          '<div class="status error">「返事をした」の更新に失敗しました: ' + esc(e.message) + '</div>';
       }
     }
 
