@@ -1,0 +1,33 @@
+# 本番 Worker の設定。2026-09-21 からこのリポジトリで管理する（gitignore しない）。
+#
+# ⚠️ `wrangler deploy` は [triggers] と [vars] を **このファイルの内容で本番へ丸ごと上書き**する。
+#    gitignore していた頃、別マシンで再構成した不完全な toml から deploy され、
+#    cron 2 本（朝サマリー・日中リマインド）と vars 2 件が消えて未返信アラートが 2 日止まった
+#    （2026-09-20 / version 38）。デプロイは必ずこのファイルを正として行うこと。
+#
+# 秘密情報（DISCORD_BOT_TOKEN 等）はここには書かず、Secret / .dev.vars で管理する。
+# 値の確認: `npx wrangler kv namespace list` / Cloudflare の versions API
+
+name = "discord-permission-guard"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+account_id = "d48e791a92a0f3f27e68ca0346455fe8"
+
+[triggers]
+crons = [
+  "*/10 * * * *",  # 権限チェック + 返信監視ポーリング（10分毎）
+  "45 23 * * *",   # 未返信の朝サマリー（23:45 UTC = 8:45 JST）
+  "0 6 * * *"      # 未返信の日中リマインド（6:00 UTC = 15:00 JST）
+]
+
+[vars]
+# Workers Paid プラン（vc-call-worker が DO 使用 = Paid 確定）のため引き上げ。
+# 4ギルド × 200 + 権限チェック分 < 1,000（Paid のサブリクエスト上限）
+REPLY_API_BUDGET_PER_GUILD = "200"
+# 通知末尾に載せる未返信チェックページのURL
+REPLY_STATUS_PAGE_URL = "https://discord-permission-guard.service-register.workers.dev/admin/reply-status"
+
+[[kv_namespaces]]
+binding = "CONFIG_KV"
+id = "3a43554bad2342228a1881e061cf00f0"
+preview_id = "29510b5b607d497eb2e8ad81c9cbeb75"

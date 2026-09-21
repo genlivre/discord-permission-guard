@@ -137,20 +137,26 @@ cd discord-permission-guard
 npm install
 ```
 
-### 2. wrangler.toml を作成
+### 2. wrangler.toml を確認
 
-```bash
-cp wrangler.toml.example wrangler.toml
-```
+`wrangler.toml` は**このリポジトリで管理しています**（本番設定の正本）。clone すればそのまま使えます。
+別の環境を新規に立てる場合だけ、`wrangler.toml.example` をひな形として使ってください。
 
-### 3. KV Namespace を作成
+### 3. KV Namespace
+
+**既存の本番 Worker を運用する場合、この手順は不要です。** リポジトリの `wrangler.toml` に
+記録済みの `CONFIG_KV` をそのまま使ってください。ここで新しい Namespace を作って ID を
+差し替えると、**ギルド設定と未返信状態が空の別 KV を向いてしまい、監視が無言で止まります。**
+
+別の Worker（staging 等）を新規に立てる場合だけ、以下で Namespace を作ります。
 
 ```bash
 npx wrangler kv namespace create CONFIG_KV
 npx wrangler kv namespace create CONFIG_KV --preview
 ```
 
-出力された ID を `wrangler.toml` に設定します：
+出力された ID は、`wrangler.toml.example` からコピーした**別名 Worker 用の toml**に設定します
+（本番正本の `wrangler.toml` は編集しないこと）：
 
 ```toml
 [[kv_namespaces]]
@@ -243,13 +249,28 @@ curl http://localhost:8787/run         # => Completed permission check
 ## デプロイ
 
 ```bash
-npx wrangler deploy
+npm run deploy
 ```
+
+`predeploy` で `wrangler.toml` の検証（`npm run validate:config`）が自動実行されます。
+**`npx wrangler deploy` を直接叩くとこの検証を飛ばしてしまう**ので、必ず `npm run deploy` を使ってください。
 
 `wrangler.toml` に設定してある内容に従ってデプロイされます。
 
-デプロイが成功すると、Cloudflare 側に Cron Trigger が設定され、
-**10 分おきに `scheduled()` → `runPermissionCheck()` が自動実行されます。**
+> ⚠️ **`wrangler deploy` は `[triggers]`（cron）と `[vars]` を本番へ丸ごと上書きします。**
+> 必ずリポジトリの `wrangler.toml` を正として実行してください。手元で作り直した toml で流すと、
+> ここに書いていない cron や vars が本番から黙って消えます（2026-09-20 に朝サマリーと
+> 日中リマインドの cron が消え、未返信アラートが 2 日間止まりました）。
+> デプロイ後は出力に **cron が 3 本**並んでいることを確認してください。
+
+デプロイが成功すると、Cloudflare 側に **Cron Trigger が 3 本**設定されます
+（`src/index.ts` の `CRON_*` 定数と一致している必要があります）。
+
+| Cron (UTC) | 実行内容 |
+|---|---|
+| `*/10 * * * *` | `runPermissionCheck()` + `runReplyPoll()`（権限チェックと返信監視ポーリング） |
+| `45 23 * * *` | `runReplyNotification(..., "morning")` — 朝サマリー（8:45 JST・0 件でも投稿） |
+| `0 6 * * *` | `runReplyNotification(..., "reminder")` — 日中リマインド（15:00 JST・0 件なら投稿しない） |
 
 ---
 
@@ -376,8 +397,9 @@ npm test
 
 - **Bot トークンは必ず Secret / .dev.vars で管理**
   - `wrangler.toml` や Git リポジトリに直書きしない
-- **wrangler.toml は .gitignore に含める**
-  - KV の ID などが含まれるため
+- **wrangler.toml はリポジトリで管理する**（2026-09-21〜。以前は .gitignore していた）
+  - 含まれるのはアカウント ID と KV の ID のみ。**トークン類は絶対に書かない**
+  - git 管理外にしていたことが、上記「cron が消えた」事故の原因だったため方針を変更した
 - Webhook URL も外部に漏れると勝手に通知を飛ばされるので注意
 - `git log` やスクショにトークン・Webhook URL を映さない
 - **管理画面は Cloudflare Access で保護する**
