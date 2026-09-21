@@ -142,14 +142,21 @@ npm install
 `wrangler.toml` は**このリポジトリで管理しています**（本番設定の正本）。clone すればそのまま使えます。
 別の環境を新規に立てる場合だけ、`wrangler.toml.example` をひな形として使ってください。
 
-### 3. KV Namespace を作成
+### 3. KV Namespace
+
+**既存の本番 Worker を運用する場合、この手順は不要です。** リポジトリの `wrangler.toml` に
+記録済みの `CONFIG_KV` をそのまま使ってください。ここで新しい Namespace を作って ID を
+差し替えると、**ギルド設定と未返信状態が空の別 KV を向いてしまい、監視が無言で止まります。**
+
+別の Worker（staging 等）を新規に立てる場合だけ、以下で Namespace を作ります。
 
 ```bash
 npx wrangler kv namespace create CONFIG_KV
 npx wrangler kv namespace create CONFIG_KV --preview
 ```
 
-出力された ID を `wrangler.toml` に設定します：
+出力された ID は、`wrangler.toml.example` からコピーした**別名 Worker 用の toml**に設定します
+（本番正本の `wrangler.toml` は編集しないこと）：
 
 ```toml
 [[kv_namespaces]]
@@ -242,8 +249,11 @@ curl http://localhost:8787/run         # => Completed permission check
 ## デプロイ
 
 ```bash
-npx wrangler deploy
+npm run deploy
 ```
+
+`predeploy` で `wrangler.toml` の検証（`npm run validate:config`）が自動実行されます。
+**`npx wrangler deploy` を直接叩くとこの検証を飛ばしてしまう**ので、必ず `npm run deploy` を使ってください。
 
 `wrangler.toml` に設定してある内容に従ってデプロイされます。
 
@@ -253,8 +263,14 @@ npx wrangler deploy
 > 日中リマインドの cron が消え、未返信アラートが 2 日間止まりました）。
 > デプロイ後は出力に **cron が 3 本**並んでいることを確認してください。
 
-デプロイが成功すると、Cloudflare 側に Cron Trigger が設定され、
-**10 分おきに `scheduled()` → `runPermissionCheck()` が自動実行されます。**
+デプロイが成功すると、Cloudflare 側に **Cron Trigger が 3 本**設定されます
+（`src/index.ts` の `CRON_*` 定数と一致している必要があります）。
+
+| Cron (UTC) | 実行内容 |
+|---|---|
+| `*/10 * * * *` | `runPermissionCheck()` + `runReplyPoll()`（権限チェックと返信監視ポーリング） |
+| `45 23 * * *` | `runReplyNotification(..., "morning")` — 朝サマリー（8:45 JST・0 件でも投稿） |
+| `0 6 * * *` | `runReplyNotification(..., "reminder")` — 日中リマインド（15:00 JST・0 件なら投稿しない） |
 
 ---
 

@@ -5,7 +5,8 @@
 # `wrangler deploy` すると、本番の [triggers] / [vars] が上書きされて消えます。
 # このファイルは、別の環境を新規に立てるときのひな形としてのみ使います。
 
-name = "discord-permission-guard"
+# ⚠️ 本番と同じ名前で deploy すると本番 Worker を上書きします。必ず別名にすること。
+name = "discord-permission-guard-dev"
 main = "src/index.ts"
 compatibility_date = "2025-01-01"
 

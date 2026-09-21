@@ -4,6 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "wrangler dev",
+    "validate:config": "node scripts/validate-wrangler-config.mjs",
+    "predeploy": "npm run validate:config",
     "deploy": "wrangler deploy",
     "check": "tsc --noEmit",
     "test": "vitest run"
