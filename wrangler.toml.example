@@ -1,6 +1,9 @@
 # wrangler.toml.example
-# このファイルをコピーして wrangler.toml を作成してください
-# cp wrangler.toml.example wrangler.toml
+#
+# 注意: 本番の設定は**リポジトリ内の `wrangler.toml` が正本**です（2026-09-21〜 git 管理下）。
+# 既存環境を触るときはこのファイルをコピーしないでください。cron や vars が欠けた toml で
+# `wrangler deploy` すると、本番の [triggers] / [vars] が上書きされて消えます。
+# このファイルは、別の環境を新規に立てるときのひな形としてのみ使います。
 
 name = "discord-permission-guard"
 main = "src/index.ts"
@@ -28,8 +31,8 @@ preview_id = "YOUR_PREVIEW_KV_NAMESPACE_ID"
 
 # 返信監視: 1ギルドあたりの Discord API 呼び出し上限（既定 40 = Free プランでも安全）。
 # Workers Paid プラン（サブリクエスト上限 1,000/実行）なら引き上げ推奨。
-# 目安: 250 × ギルド数 + 権限チェック分 が 1,000 を超えないように。
-# REPLY_API_BUDGET_PER_GUILD = "250"
+# 目安: バジェット × ギルド数 + 権限チェック分 が 1,000 を超えないように。
+# REPLY_API_BUDGET_PER_GUILD = "200"
 
 # 通知末尾に「詳細の確認・消し込みはこちら」として載せる未返信チェックページのURL（任意）
 # REPLY_STATUS_PAGE_URL = "https://<your-worker>.workers.dev/admin/reply-status"
