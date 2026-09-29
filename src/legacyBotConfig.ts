@@ -4,10 +4,13 @@
 // 起動時と定期更新で読む設定 API（/api/exclude-channels）の応答を組み立てる。
 //
 // この API は 2026-09-20 に別の端末から deploy された版（version 38）にだけ入っていて、
-// 2026-09-21 にこのリポジトリから deploy し直した時に消えた。Bot は起動済みだった為に止まらず、
-// 2026-09-29 に EC2 を再起動した時に「Cannot start without config」で起動できなくなった。
-// 応答は version 38 と同じ形・同じ値の選び方にしてある（Bot のソースが手元に無く、9 日間この値で動いていた為）。
+// 2026-09-21 にこのリポジトリから deploy し直した時に消えた。2026-09-29 の EC2 再起動で Bot が起動できなくなり，PR #15 で戻した。
 //
+// 値は管理画面の「返信忘れ監視」の設定（replyMonitor）から取る（2026-09-29 の運営判断）。
+// 管理画面で編集した運営ロール・監視除外チャンネルが，10 分毎の返信監視とリアルタイムの Bot の両方に効く。
+// version 38 は公開 OK のホワイトリスト（whitelistChannelIds）とトップレベルの staffRoleIds を返していて，
+// 1 月時点の Bot 専用の設定（unansweredMonitor，今の管理画面では編集できない）とも食い違っていた。
+
 // Bot 側の型（バイナリから確認）: ApiGuildConfig { guildId, guildName, excludedChannelIds, staffRoleIds, staffUserIds, webhookUrl }
 
 import type { GuildConfig } from "./config";
@@ -21,27 +24,18 @@ export interface LegacyBotGuildConfig {
   webhookUrl: string;
 }
 
-// KV のギルド設定には、型に無い旧来の項目（トップレベルの staffRoleIds 等）が残っている
-type StoredGuild = GuildConfig & {
-  excludedChannelIds?: string[];
-  staffRoleIds?: string[];
-  staffUserIds?: string[];
-  unansweredWebhookUrl?: string;
-};
-
 export function buildLegacyBotConfig(guilds: GuildConfig[]): LegacyBotGuildConfig[] {
-  return (guilds as StoredGuild[]).map((guild) => ({
-    guildId: guild.guildId,
-    guildName: guild.guildName,
-    // excludedChannelIds が未設定なら whitelistChannelIds を使う（version 38 と同じ）
-    excludedChannelIds:
-      guild.excludedChannelIds && guild.excludedChannelIds.length > 0
-        ? guild.excludedChannelIds
-        : guild.whitelistChannelIds ?? [],
-    staffRoleIds: guild.staffRoleIds ?? [],
-    staffUserIds: guild.staffUserIds ?? [],
-    webhookUrl: guild.unansweredWebhookUrl || guild.alertWebhookUrl,
-  }));
+  return guilds
+    .filter((guild) => guild.replyMonitor?.enabled)
+    .map((guild) => ({
+      guildId: guild.guildId,
+      guildName: guild.guildName,
+      excludedChannelIds: guild.replyMonitor?.excludedChannelIds ?? [],
+      staffRoleIds: guild.replyMonitor?.staffRoleIds ?? [],
+      // 運営をユーザー単位で指定する設定は管理画面に無い（ロールで判定する）
+      staffUserIds: [],
+      webhookUrl: guild.alertWebhookUrl,
+    }));
 }
 
 /**

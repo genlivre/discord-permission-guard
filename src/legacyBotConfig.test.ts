@@ -3,41 +3,35 @@ import { buildLegacyBotConfig, isAuthorizedLegacyBotRequest } from "./legacyBotC
 import type { GuildConfig } from "./config";
 
 describe("buildLegacyBotConfig", () => {
-  it("version 38 と同じ選び方で組み立てる（除外は whitelist に倒し、運営ロールはトップレベル、Webhook は alert）", () => {
-    const stored = {
+  const guild = (overrides: Record<string, unknown>) =>
+    ({
       guildId: "g1",
       guildName: "Vtamp",
       alertWebhookUrl: "https://example.com/alert",
-      whitelistChannelIds: ["c1", "c2"],
-      staffRoleIds: ["r1"],
-      replyMonitor: { enabled: true, staffRoleIds: ["other"], excludedChannelIds: ["x"], resolveReactionEmojis: ["✅"] },
-    } as unknown as GuildConfig;
-    expect(buildLegacyBotConfig([stored])).toEqual([
+      whitelistChannelIds: ["public1"],
+      staffRoleIds: ["legacy-role"],
+      unansweredMonitor: { staffRoleIds: ["old"], excludedChannelIds: ["old-ex"] },
+      replyMonitor: { enabled: true, staffRoleIds: ["r1", "r2"], excludedChannelIds: ["ex1"], resolveReactionEmojis: ["✅"] },
+      ...overrides,
+    }) as unknown as GuildConfig;
+
+  it("管理画面の返信忘れ監視（replyMonitor）の運営ロールと監視除外チャンネルを返す", () => {
+    expect(buildLegacyBotConfig([guild({})])).toEqual([
       {
         guildId: "g1",
         guildName: "Vtamp",
-        excludedChannelIds: ["c1", "c2"],
-        staffRoleIds: ["r1"],
+        excludedChannelIds: ["ex1"],
+        staffRoleIds: ["r1", "r2"],
         staffUserIds: [],
         webhookUrl: "https://example.com/alert",
       },
     ]);
   });
 
-  it("旧来の excludedChannelIds と unansweredWebhookUrl があればそちらを使う", () => {
-    const stored = {
-      guildId: "g2",
-      guildName: "EN",
-      alertWebhookUrl: "https://example.com/alert",
-      whitelistChannelIds: ["c1"],
-      excludedChannelIds: ["e1"],
-      staffUserIds: ["u1"],
-      unansweredWebhookUrl: "https://example.com/unanswered",
-    } as unknown as GuildConfig;
-    const [config] = buildLegacyBotConfig([stored]);
-    expect(config.excludedChannelIds).toEqual(["e1"]);
-    expect(config.staffUserIds).toEqual(["u1"]);
-    expect(config.webhookUrl).toBe("https://example.com/unanswered");
+  it("返信忘れ監視が無効・未設定のギルドは返さない", () => {
+    const disabled = guild({ guildId: "g2", replyMonitor: { enabled: false, staffRoleIds: [], excludedChannelIds: [] } });
+    const unset = guild({ guildId: "g3", replyMonitor: undefined });
+    expect(buildLegacyBotConfig([guild({}), disabled, unset]).map((g) => g.guildId)).toEqual(["g1"]);
   });
 });
 
