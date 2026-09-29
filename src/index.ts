@@ -4,6 +4,7 @@ import { handleAdminRequest, getConfig, type AdminEnv } from "./admin";
 import { runReplyPoll } from "./replyMonitor/poller";
 import { runReplyNotification } from "./replyMonitor/notifier";
 import type { Env as DiscordEnv } from "./discord";
+import { buildLegacyBotConfig, isAuthorizedLegacyBotRequest } from "./legacyBotConfig";
 
 export interface Env extends DiscordEnv {
   CONFIG_KV: KVNamespace;
@@ -12,6 +13,8 @@ export interface Env extends DiscordEnv {
   REPLY_API_BUDGET_PER_GUILD?: string;
   // 未返信チェックページのURL（通知末尾に載せる。未設定なら省略）
   REPLY_STATUS_PAGE_URL?: string;
+  // EC2 の discord-unanswered-bot が /api/exclude-channels を読む時のトークン（wrangler secret）
+  LEGACY_BOT_CONFIG_TOKEN?: string;
 }
 
 // Cron 式（wrangler.toml の [triggers].crons と一致させること）
@@ -109,6 +112,16 @@ export default {
             .length,
         }))
       );
+    }
+
+    // EC2 の discord-unanswered-bot（Rust・常駐）が読む設定（src/legacyBotConfig.ts）
+    if (url.pathname === "/api/exclude-channels") {
+      if (!isAuthorizedLegacyBotRequest(url, env.LEGACY_BOT_CONFIG_TOKEN)) {
+        return new Response("Forbidden", { status: 403 });
+      }
+      return Response.json(buildLegacyBotConfig(guilds), {
+        headers: { "Cache-Control": "no-store" },
+      });
     }
 
     return new Response("Not Found", { status: 404 });
